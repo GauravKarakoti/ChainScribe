@@ -37,7 +37,7 @@ ChainScribe is a decentralized documentation platform. It allows multiple users 
 ### Installation
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/your-username/chain-scribe.git
+    git clone https://github.com/GauravKarakoti/chainscribe.git
     ```
 2.  Install dependencies:
     ```bash
@@ -62,4 +62,4 @@ ChainScribe is a decentralized documentation platform. It allows multiple users 
 5.  View the version history and verify any version's integrity against the blockchain.
 
 ## Team
-- [Your Name] - [X/Twitter handle] - [Telegram handle]
+- [Gaurav Karakoti] - [[@GauravKara_koti](https://x.com/GauravKara_koti)] - [[@GauravKarakoti](https://t.me/GauravKarakoti)]
