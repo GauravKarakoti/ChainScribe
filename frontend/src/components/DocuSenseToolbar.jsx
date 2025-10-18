@@ -32,7 +32,7 @@ export const DocuSenseToolbar = ({ selectedText, documentId, onAIResponse }) => 
   ];
 
   const handleToolClick = async (tool) => {
-    if (!selectedText || !isConnected) return;
+    if (!selectedText) return;
     
     setIsProcessing(true);
     setActiveTool(tool.name);
@@ -66,17 +66,6 @@ export const DocuSenseToolbar = ({ selectedText, documentId, onAIResponse }) => 
       setActiveTool(null);
     }
   };
-
-  if (!isConnected) {
-    return (
-      <div className="docu-sense-toolbar disconnected">
-        <div className="warning-message">
-          <Clock size={16} />
-          <span>Connecting to 0G Compute...</span>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="docu-sense-toolbar">

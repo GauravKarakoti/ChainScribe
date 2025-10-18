@@ -7,24 +7,4 @@ export default defineConfig({
   server: {
     port: 3000,
   },
-  define: {
-    global: 'globalThis',
-    'process.env': {},
-    'process.version': '"v18.0.0"',
-  },
-  resolve: {
-    alias: {
-      stream: 'stream-browserify',
-      util: 'util',
-      buffer: 'buffer',
-      process: 'process/browser',
-    },
-  },
-  optimizeDeps: {
-    esbuildOptions: {
-      define: {
-        global: 'globalThis',
-      },
-    },
-  },
 });

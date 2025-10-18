@@ -12,7 +12,7 @@ function App() {
     isLoading,
     signer,
     error,
-    connectWalletAndInitialize,
+    connectWallet,
     invokeModel,
   } = useZeroGCompute();
 
@@ -62,10 +62,9 @@ function App() {
     setDocumentContent(newContent);
   };
 
-  // Auto-connect if already authorized
   useEffect(() => {
     if (window.ethereum && window.ethereum.selectedAddress && !isConnected && !isLoading) {
-      connectWalletAndInitialize();
+      connectWallet(); // Changed from connectWalletAndInitialize
     }
   }, []);
 
@@ -89,8 +88,8 @@ function App() {
               <div className="status-dot connected"></div>
             </div>
           ) : (
-            <button 
-              onClick={connectWalletAndInitialize} 
+            <button
+              onClick={connectWallet} // Changed from connectWalletAndInitialize
               disabled={isLoading}
               className="connect-button"
             >
@@ -196,8 +195,8 @@ function App() {
           <h2>Welcome to ChainScribe</h2>
           <p>Connect your wallet to access decentralized AI-powered documentation features.</p>
           <p>Experience verifiable AI inference powered by 0G Compute Network.</p>
-          <button 
-            onClick={connectWalletAndInitialize} 
+          <button
+            onClick={connectWallet} // Changed from connectWalletAndInitialize
             disabled={isLoading}
             className="connect-button-large"
           >

@@ -1,4 +1,14 @@
 @import 'tailwindcss';
+:root {
+  --color-primary: #00d4aa;
+  --color-dark: #1a1a2e; /* Sidebar/panel background */
+  --color-dark-light: #252545; /* Item background */
+  --color-dark-lighter: #3a3a5a; /* Hover background */
+  --color-border: #2a2a4a; /* Main borders */
+  --color-text: #e0e0e0;
+  --color-text-muted: #888;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -8,7 +18,7 @@
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #0f0f23;
-  color: #e0e0e0;
+  color: var(--color-text);
   line-height: 1.6;
 }
 
@@ -454,4 +464,51 @@ body {
   .status-indicators {
     justify-content: center;
   }
+}
+
+.text-primary { color: var(--color-primary); }
+.text-text { color: var(--color-text); }
+.text-text-muted { color: var(--color-text-muted); }
+.bg-dark { background-color: var(--color-dark); }
+.bg-dark-light { background-color: var(--color-dark-light); }
+.bg-dark-lighter { background-color: var(--color-dark-lighter); }
+.border-border { border-color: var(--color-border); }
+.border-primary { border-color: var(--color-primary); }
+.ring-primary\/50 { --tw-ring-color: rgba(0, 212, 170, 0.5); }
+
+.change-list {
+  /* Increased gap between items */
+  @apply space-y-3; /* or space-y-4 if you want more */
+}
+
+/* Styles for individual change items */
+.change-item-container {
+   @apply bg-dark-light rounded-lg border border-border/50 transition-shadow; /* Use slightly lighter bg */
+}
+
+.change-item-container:hover {
+    /* Subtle shadow on hover */
+   @apply shadow-md shadow-black/20;
+}
+
+.change-item-header {
+   /* Padding within the header */
+   @apply p-3 cursor-pointer flex items-start justify-between gap-2;
+}
+
+.line-clamp-2 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.change-details {
+    @apply mt-0 pt-3 border-t border-border/30 space-y-3 bg-dark-light p-3 rounded-b-lg;
+    /* Removed top margin, adjusted bg */
+}
+
+/* Style the statistics footer */
+.change-statistics {
+     @apply mt-4 pt-4 border-t border-border/50; /* Add some transparency to border */
 }
