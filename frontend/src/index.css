@@ -478,37 +478,53 @@ body {
 
 .change-list {
   /* Increased gap between items */
-  @apply space-y-3; /* or space-y-4 if you want more */
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem; /* space-y-3 → 12px (use 1rem for space-y-4) */
 }
 
 /* Styles for individual change items */
 .change-item-container {
-   @apply bg-dark-light rounded-lg border border-border/50 transition-shadow; /* Use slightly lighter bg */
+  background-color: #1e1e1e; /* Replace with your dark-light color */
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1); /* border-border/50 */
+  transition: box-shadow 0.2s ease-in-out;
 }
 
 .change-item-container:hover {
-    /* Subtle shadow on hover */
-   @apply shadow-md shadow-black/20;
+  /* Subtle shadow on hover */
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
 }
 
 .change-item-header {
-   /* Padding within the header */
-   @apply p-3 cursor-pointer flex items-start justify-between gap-2;
+  /* Padding within the header */
+  padding: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
 .line-clamp-2 {
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .change-details {
-    @apply mt-0 pt-3 border-t border-border/30 space-y-3 bg-dark-light p-3 rounded-b-lg;
-    /* Removed top margin, adjusted bg */
+  margin-top: 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.3); /* border-border/30 */
+  background-color: #1e1e1e; /* dark-light again */
+  padding: 0.75rem;
+  border-bottom-left-radius: 0.5rem;
+  border-bottom-right-radius: 0.5rem;
 }
 
-/* Style the statistics footer */
 .change-statistics {
-     @apply mt-4 pt-4 border-t border-border/50; /* Add some transparency to border */
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.5); /* border-border/50 */
 }
