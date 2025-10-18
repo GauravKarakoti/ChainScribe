@@ -64,7 +64,7 @@ export const useZeroGCompute = () => {
       console.log('✅ 0G Compute connected successfully!');
       setCompute(computeInstance);
       setIsConnected(true);
-      
+      console.log('🤖 Ready to invoke models on 0G Compute.');
     } catch (error) {
       console.error('❌ Failed to initialize 0G Compute:', error);
       setError(error.message);

@@ -1,3 +1,4 @@
+@import 'tailwindcss';
 /* Error Styles */
 .error-banner {
   display: flex;
