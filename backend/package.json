@@ -4,7 +4,6 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon server.js",
-    "deploy-model": "node scripts/deploy-model.js",
     "test": "node tests/run-tests.js"
   },
   "dependencies": {

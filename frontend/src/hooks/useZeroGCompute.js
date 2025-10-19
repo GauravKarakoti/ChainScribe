@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // Added useEffect
 import { BrowserProvider } from 'ethers';
 
 export const useZeroGCompute = () => {
@@ -6,12 +6,14 @@ export const useZeroGCompute = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [signer, setSigner] = useState(null);
   const [error, setError] = useState(null);
+  const [userAddress, setUserAddress] = useState(null); // Store address separately
 
   const connectWallet = async () => {
     if (!window.ethereum) {
       const errorMsg = 'Please install MetaMask or another browser wallet!';
       setError(errorMsg);
-      alert(errorMsg);
+      // alert(errorMsg); // Avoid alerts, use UI feedback
+      console.error(errorMsg);
       return;
     }
 
@@ -21,97 +23,177 @@ export const useZeroGCompute = () => {
     try {
       console.log('🔄 Connecting wallet...');
 
-      await window.ethereum.request({ method: 'eth_requestAccounts' });
+      // Request accounts - this prompts the user if not connected
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+      if (!accounts || accounts.length === 0) {
+          throw new Error('No accounts found. Please unlock your wallet or create an account.');
+      }
 
       const provider = new BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      setSigner(signer);
+      const network = await provider.getNetwork(); // Check network if needed
+      console.log('🌍 Connected Network:', network.name, `(Chain ID: ${network.chainId})`);
+      // Add network validation if your app requires a specific chain
+
+      const currentSigner = await provider.getSigner();
+      const address = await currentSigner.getAddress();
+      setSigner(currentSigner);
+      setUserAddress(address); // Store address
       setIsConnected(true);
 
-      console.log('✅ Wallet connected:', await signer.getAddress());
+      console.log('✅ Wallet connected:', address);
+
     } catch (error) {
       console.error('❌ Failed to connect wallet:', error);
-      setError(error.message);
+      let userFriendlyError = 'Failed to connect wallet.';
+      if (error.code === 4001) { // User rejected connection
+         userFriendlyError = 'Wallet connection request rejected.';
+      } else if (error.message) {
+         userFriendlyError = error.message;
+      }
+      setError(userFriendlyError);
       setIsConnected(false);
+      setSigner(null);
+      setUserAddress(null);
     } finally {
       setIsLoading(false);
     }
   };
 
   const invokeModel = async (params) => {
-    if (!params.modelId || !params.prompt) {
-      throw new Error('Model ID and prompt are required');
+    if (!params.analysisType || !params.prompt) { // Use analysisType and prompt
+      throw new Error('Analysis type and prompt are required');
     }
 
-    console.log(`🤖 Invoking model: ${params.modelId}`);
+    // Model ID is now determined by the backend based on analysisType
+    console.log(`🤖 Requesting analysis: ${params.analysisType}`);
     console.log(`📝 Prompt length: ${params.prompt.length} characters`);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/analyze`, {
+      // Ensure backend URL is correctly configured
+      const backendUrl = import.meta.env.VITE_BACKEND_URL;
+      if (!backendUrl) {
+           throw new Error("VITE_BACKEND_URL is not defined in the environment variables.");
+      }
+
+      const response = await fetch(`${backendUrl}/api/analyze`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          content: params.prompt,
+          content: params.prompt, // Send the raw prompt content
           documentId: params.documentId,
-          analysisType: params.analysisType,
+          analysisType: params.analysisType, // Send the type for backend logic
         }),
       });
 
+      const responseData = await response.json(); // Always try to parse JSON
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        // Use error message from backend if available, otherwise use status text
+        throw new Error(responseData.message || responseData.error || `HTTP error! status: ${response.status}`);
       }
 
-      const data = await response.json();
-      console.log('✅ Model invocation successful:', data);
+      console.log('✅ Analysis successful:', responseData);
+
+      // Return structure matches backend response
       return {
-        output: data.analysis,
-        proof: data.proof,
-        modelId: data.modelId,
-        timestamp: data.timestamp,
+        output: responseData.analysis,
+        proof: responseData.proof, // This might be chatId/traceId now
+        modelId: responseData.modelId, // Model ID used by provider
+        timestamp: responseData.timestamp,
+        cost: responseData.cost // Include cost if backend provides it
       };
     } catch (error) {
-      console.error('❌ Model invocation failed:', error);
+      console.error('❌ Analysis invocation failed:', error);
+      // Re-throw error for UI handling
       throw new Error(`AI processing failed: ${error.message}`);
     }
   };
 
-  const getAvailableModels = async () => {
-    // In a real application, you might fetch this from your backend as well
-    return [
-      {
-        id: 'chainscribe-docusense-v1',
-        name: 'DocuSense AI',
-        description: 'General purpose document analysis and assistance',
-        maxTokens: 1000,
-        temperatureRange: [0.1, 0.7],
-      },
-      {
-        id: 'chainscribe-change-analyzer',
-        name: 'Change Analyzer',
-        description: 'Specialized for change analysis and summarization',
-        maxTokens: 200,
-        temperatureRange: [0.1, 0.4],
-      },
-    ];
-  };
+  // --- getAvailableModels function REMOVED ---
 
   const disconnect = () => {
+    console.log('🔌 Disconnecting wallet...');
     setIsConnected(false);
     setSigner(null);
+    setUserAddress(null);
     setError(null);
+    // Optionally clear related state in your app
   };
+
+  // Effect to handle account and network changes
+  useEffect(() => {
+    if (window.ethereum) {
+        const handleAccountsChanged = (accounts) => {
+            console.log('👤 Wallet accounts changed:', accounts);
+            if (accounts.length === 0) {
+                // Wallet disconnected or locked
+                disconnect();
+            } else if (accounts[0] !== userAddress) {
+                // Switched to a different account, reconnect to update signer
+                connectWallet();
+            }
+        };
+
+        const handleChainChanged = (_chainId) => {
+            console.log('🔄 Wallet network changed:', _chainId);
+            // Reload the page or prompt user to switch back, as signer/provider is network-specific
+            // alert('Network changed. Please reconnect or reload the page.');
+            // For simplicity, just disconnect. User needs to reconnect.
+            disconnect();
+             // Optionally, prompt user to connect again or auto-connect
+             // connectWallet(); // Or trigger UI prompt
+        };
+
+
+        window.ethereum.on('accountsChanged', handleAccountsChanged);
+        window.ethereum.on('chainChanged', handleChainChanged);
+
+        // Check initial connection status on load if MetaMask is already connected
+        const checkInitialConnection = async () => {
+            try {
+                const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                if (accounts.length > 0) {
+                    console.log("Existing connection found on load. Reconnecting...");
+                    await connectWallet(); // Re-establish connection with current account/network
+                } else {
+                    console.log("No existing wallet connection found on load.");
+                }
+            } catch (err) {
+                console.error("Error checking initial wallet connection:", err);
+                 if (err.code === -32002) { // Request already pending
+                     console.log("MetaMask connection request already pending.");
+                     setIsLoading(true); // Indicate loading while user interacts with MetaMask
+                 } else {
+                     setError("Could not check initial wallet connection.");
+                 }
+            }
+        };
+        checkInitialConnection();
+
+
+        // Cleanup function
+        return () => {
+            if (window.ethereum.removeListener) { // Check if removeListener exists
+               window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+               window.ethereum.removeListener('chainChanged', handleChainChanged);
+            }
+        };
+    }
+  }, [userAddress]); // Re-run effect if userAddress changes
+
 
   return {
     signer,
+    userAddress, // Expose userAddress
     isConnected,
     isLoading,
     error,
     connectWallet,
     invokeModel,
-    getAvailableModels,
+    // getAvailableModels removed
     disconnect,
   };
 };
