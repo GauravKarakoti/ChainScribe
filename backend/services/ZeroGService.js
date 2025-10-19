@@ -6,9 +6,9 @@ import axios from 'axios';
 
 dotenv.config();
 
-// Define the amount to add to the ledger (e.g., 0.1 0G tokens)
+// Define the amount to add to the ledger (e.g., 1 0G tokens)
 // You might want to make this configurable via .env
-const LEDGER_FUNDING_AMOUNT = process.env.LEDGER_FUNDING_AMOUNT || '0.1'; // Amount in 0G tokens as string
+const LEDGER_FUNDING_AMOUNT = process.env.LEDGER_FUNDING_AMOUNT || '1'; // Amount in 0G tokens as string
 
 export class ZeroGService {
   constructor() {
@@ -140,85 +140,86 @@ export class ZeroGService {
     }
   }
 
-  async deployModel(modelConfig) {
-        await this.initialize(); // Ensure services are initialized
-        if (!this.compute) throw new Error("0G Compute Broker not initialized.");
+  async deployModel(modelConfig) {
+        await this.initialize(); // Ensure services are initialized
+        if (!this.compute) throw new Error("0G Compute Broker not initialized.");
 
-        if (typeof this.compute.deployModel !== 'function') {
-             console.error('❌ Error: The @0glabs/0g-serving-broker InferenceBroker instance does not seem to have a `deployModel` method in this version. Deployment might need to be done via CLI or other means.');
-             throw new Error('deployModel method not found on InferenceBroker.');
-         }
+        if (typeof this.compute.deployModel !== 'function') {
+             console.error('❌ Error: The @0glabs/0g-serving-broker InferenceBroker instance does not seem to have a `deployModel` method in this version. Deployment might need to be done via CLI or other means.');
+             throw new Error('deployModel method not found on InferenceBroker.');
+           }
 
-        console.log(`🚀 Deploying model '${modelConfig.id}' to 0G Compute...`);
-        try {
-            const deployment = await this.compute.deployModel({
-              modelId: modelConfig.id,
-              modelHash: modelConfig.hash, // Ensure this hash is correct (e.g., IPFS CID from model provider)
-              framework: modelConfig.framework || 'pytorch',
-              minMemory: modelConfig.memory || '8GB',
-              gpuType: modelConfig.gpu || 't4',
-              replicas: modelConfig.replicas || 2
-            });
+        console.log(`🚀 Deploying model '${modelConfig.id}' to 0G Compute...`);
+        try {
+            const deployment = await this.compute.deployModel({
+               modelId: modelConfig.id,
+               modelHash: modelConfig.hash, // Ensure this hash is correct (e.g., IPFS CID from model provider)
+               framework: modelConfig.framework || 'pytorch',
+               minMemory: modelConfig.memory || '8GB',
+               gpuType: modelConfig.gpu || 't4',
+               replicas: modelConfig.replicas || 2
+            });
 
-            console.log(`✅ Model '${modelConfig.id}' deployed:`, deployment);
-            return deployment;
-        } catch (error) {
-            console.error(`❌ Model deployment failed for ${modelConfig.id}:`, error);
-            throw error; // Re-throw after logging
-        }
+            console.log(`✅ Model '${modelConfig.id}' deployed:`, deployment);
+            return deployment;
+        } catch (error) {
+            console.error(`❌ Model deployment failed for ${modelConfig.id}:`, error);
+            throw error; // Re-throw after logging
+        }
 
-      }
+      }
 
-      // Invoke model using the correct broker methods
-      async invokeModel(invocationParams) {
-        await this.initialize(); // Ensure services are initialized
-        if (!this.compute) throw new Error("0G Compute Broker not initialized.");
-        if (!this.defaultProviderAddress) throw new Error("ZEROG_PROVIDER_ADDRESS is not configured in environment variables.");
+      // Invoke model using the correct broker methods
+      async invokeModel(invocationParams) {
+        await this.initialize(); // Ensure services are initialized
+        if (!this.compute) throw new Error("0G Compute Broker not initialized.");
+        if (!this.defaultProviderAddress) throw new Error("ZEROG_PROVIDER_ADDRESS is not configured in environment variables.");
 
-        const providerAddress = this.defaultProviderAddress;
+        const providerAddress = this.defaultProviderAddress;
 
-        try {
-          console.log(`[invokeModel] Getting service metadata for provider: ${providerAddress}`);
-          const { endpoint, model: providerModelMapping } = await this.compute.getServiceMetadata(providerAddress);
+        try {
+          console.log(`[invokeModel] Getting service metadata for provider: ${providerAddress}`);
+          const { endpoint, model: providerModelMapping } = await this.compute.getServiceMetadata(providerAddress);
           if (!endpoint) {
               throw new Error(`Could not retrieve service endpoint for provider ${providerAddress}`);
           }
-          console.log(`[invokeModel] Using endpoint: ${endpoint}, Provider's registered model mapping: ${providerModelMapping}`);
+          console.log(`[invokeModel] Using endpoint: ${endpoint}, Provider's registered model mapping: ${providerModelMapping}`);
 
           // Determine the model ID for the API request. Use the one passed in unless logic dictates otherwise.
           const modelIdForRequest = invocationParams.modelId;
-          console.log(`[invokeModel] Using model ID for request: ${modelIdForRequest}`);
+          console.log(`[invokeModel] Using model ID for request: ${modelIdForRequest}`);
 
-          console.log(`[invokeModel] Generating request headers for content length: ${invocationParams.prompt.length}`);
-          const billingContent = invocationParams.prompt; // The content used for billing signature
-          const headers = await this.compute.getRequestHeaders(providerAddress, billingContent);
-          console.log('[invokeModel] Generated Headers:', headers); // Be cautious logging headers in production
+          console.log(`[invokeModel] Generating request headers for content length: ${invocationParams.prompt.length}`);
+          const billingContent = invocationParams.prompt; // The content used for billing signature
+          await this.compute.acknowledgeProviderSigner(providerAddress)
+          const headers = await this.compute.getRequestHeaders(providerAddress, billingContent);
+          console.log('[invokeModel] Generated Headers:', headers); // Be cautious logging headers in production
 
-          console.log(`[invokeModel] Sending request to AI provider endpoint: ${endpoint}`);
-          const requestPayload = {
-            model: modelIdForRequest,
-            messages: [{ role: "user", content: invocationParams.prompt }],
-            ...(invocationParams.maxTokens && { max_tokens: invocationParams.maxTokens }),
-            ...(invocationParams.temperature && { temperature: invocationParams.temperature }),
+          console.log(`[invokeModel] Sending request to AI provider endpoint: ${endpoint}`);
+          const requestPayload = {
+            model: modelIdForRequest,
+            messages: [{ role: "user", content: invocationParams.prompt }],
+            ...(invocationParams.maxTokens && { max_tokens: invocationParams.maxTokens }),
+            ...(invocationParams.temperature && { temperature: invocationParams.temperature }),
           // Add stream: false if you don't want streaming responses
           // stream: false,
-          };
+          };
 
-          const axiosResponse = await axios.post(endpoint, requestPayload, {
-            headers: {
-              ...headers, // Crucial: Includes billing/signature headers
-              'Content-Type': 'application/json',
-              'Accept': 'application/json', // Often required
-            },
-             timeout: 120000, // Increase timeout (e.g., 120 seconds) for AI models
-          });
+          const axiosResponse = await axios.post(`${endpoint}/chat/completions`, requestPayload, {
+            headers: {
+              ...headers, // Crucial: Includes billing/signature headers
+              'Content-Type': 'application/json',
+              'Accept': 'application/json', // Often required
+            },
+             timeout: 120000, // Increase timeout (e.g., 120 seconds) for AI models
+          });
 
-          console.log('[invokeModel] Received response from AI provider.');
+          console.log('[invokeModel] Received response from AI provider.');
 
           // --- Extract data and process response ---
-          let responseContent = '';
+          let responseContent = '';
           // Header for trace/chat ID might vary, check provider docs
-          let chatId = axiosResponse.headers['x-trace-id'] || axiosResponse.headers['trace_id'] || axiosResponse.data?.id || null;
+          let chatId = axiosResponse.headers['x-trace-id'] || axiosResponse.headers['trace_id'] || axiosResponse.data?.id || null;
 
           // Adapt based on actual response structure (OpenAI example)
           if (axiosResponse.data && axiosResponse.data.choices && axiosResponse.data.choices.length > 0) {
@@ -233,41 +234,41 @@ export class ZeroGService {
               // Consider throwing an error or returning an empty response depending on desired behavior
           }
 
-          console.log(`[invokeModel] Processing response. Chat/Trace ID: ${chatId || 'N/A'}, Content length: ${responseContent.length}`);
+          console.log(`[invokeModel] Processing response. Chat/Trace ID: ${chatId || 'N/A'}, Content length: ${responseContent.length}`);
 
           // processResponse handles payment settlement and verification
-          const isValid = await this.compute.processResponse(providerAddress, responseContent, chatId);
+          const isValid = await this.compute.processResponse(providerAddress, responseContent, chatId);
 
-          // Handle verification result
-          if (isValid === false) {
-              console.warn(`⚠️ [invokeModel] Response verification failed for Chat ID: ${chatId}. The response may not be trustworthy.`);
-          } else if (isValid === null) {
-               console.log(`[invokeModel] Response for Chat ID: ${chatId} could not be verified (may be non-verifiable service or missing signature).`);
-          } else {
-                console.log(`✅ [invokeModel] Response for Chat ID: ${chatId} processed successfully (verified: ${isValid}).`);
-          }
+          // Handle verification result
+          if (isValid === false) {
+             console.warn(`⚠️ [invokeModel] Response verification failed for Chat ID: ${chatId}. The response may not be trustworthy.`);
+          } else if (isValid === null) {
+              console.log(`[invokeModel] Response for Chat ID: ${chatId} could not be verified (may be non-verifiable service or missing signature).`);
+          } else {
+               console.log(`✅ [invokeModel] Response for Chat ID: ${chatId} processed successfully (verified: ${isValid}).`);
+          }
 
           // Return consistent structure
-          return {
-            output: responseContent,
-            modelId: invocationParams.modelId, // The model requested by your app
+          return {
+            output: responseContent,
+            modelId: invocationParams.modelId, // The model requested by your app
             providerModelId: modelIdForRequest, // The model ID sent to the provider endpoint
-            chatId: chatId,
-            verified: isValid,
-            timestamp: Date.now()
-          };
+            chatId: chatId,
+            verified: isValid,
+            timestamp: Date.now()
+          };
 
-        } catch (error) {
-          console.error('❌ [invokeModel] Error during model invocation:');
+        } catch (error) {
+          console.error('❌ [invokeModel] Error during model invocation:');
            // Log detailed Axios error information if available
-          if (axios.isAxiosError(error)) {
-              console.error('   Axios Error Status:', error.response?.status);
-              console.error('   Axios Error Data:', JSON.stringify(error.response?.data, null, 2));
+          if (axios.isAxiosError(error)) {
+             console.error('   Axios Error Status:', error.response?.status);
+             console.error('   Axios Error Data:', JSON.stringify(error.response?.data, null, 2));
               console.error('   Axios Request URL:', error.config?.url);
               // console.error('   Axios Request Headers:', error.config?.headers); // Avoid logging sensitive headers
               // More specific error message for Axios errors
                throw new Error(`AI provider request failed with status ${error.response?.status}: ${error.response?.data?.error?.message || error.message}`);
-          } else if (error.message && error.message.includes('AccountNotExists')) {
+          } else if (error.message && error.message.includes('AccountNotExists')) {
                // Handle the specific account error
                console.error(`   Error: The signer account ${this.signer.address} might not be registered or funded in the 0G Compute Ledger for provider ${providerAddress}.`);
                console.error(`   Original Error: ${error.message}`);
@@ -282,65 +283,65 @@ export class ZeroGService {
                console.error('   Generic Error:', error);
                console.error(error.stack); // Log stack trace for better debugging
           }
-          // Re-throw a user-friendly or wrapped error
-          throw new Error(`Model invocation failed. Please check backend logs. Original error: ${error.message}`);
-        }
-      }
+          // Re-throw a user-friendly or wrapped error
+          throw new Error(`Model invocation failed. Please check backend logs. Original error: ${error.message}`);
+        }
+      }
 
 
-       // --- Storage Methods ---
-        async uploadToStorage(data, tags = {}) {
+       // --- Storage Methods ---
+        async uploadToStorage(data, tags = {}) {
          await this.initialize(); // Ensure services are initialized
-            if (!this.storage) {
-                console.error('❌ [uploadToStorage] Storage service not available.');
-                throw new Error('0G Storage is not initialized or configured.');
-            }
+           if (!this.storage) {
+              console.error('❌ [uploadToStorage] Storage service not available.');
+              throw new Error('0G Storage is not initialized or configured.');
+           }
 
-            console.log('[uploadToStorage] Uploading data to 0G Storage...');
-            try {
-                // Ensure data is stringified before upload if it's an object/array
+           console.log('[uploadToStorage] Uploading data to 0G Storage...');
+           try {
+               // Ensure data is stringified before upload if it's an object/array
               const dataToUpload = typeof data === 'string' ? data : JSON.stringify(data);
-                const receipt = await this.storage.upload({
-                    data: dataToUpload,
-                    tags: { ...tags, uploadedAt: new Date().toISOString(), contentType: typeof data === 'string' ? 'text/plain' : 'application/json' }
-                });
-                console.log('✅ [uploadToStorage] Data uploaded successfully:', receipt);
-                return receipt; // Contains contentHash, storageId, txHash etc.
-            } catch (error) {
-                console.error('❌ [uploadToStorage] Storage upload error:', error);
-                throw new Error(`0G Storage upload failed: ${error.message}`);
-            }
-        }
+               const receipt = await this.storage.upload({
+                   data: dataToUpload,
+                   tags: { ...tags, uploadedAt: new Date().toISOString(), contentType: typeof data === 'string' ? 'text/plain' : 'application/json' }
+               });
+               console.log('✅ [uploadToStorage] Data uploaded successfully:', receipt);
+               return receipt; // Contains contentHash, storageId, txHash etc.
+           } catch (error) {
+               console.error('❌ [uploadToStorage] Storage upload error:', error);
+               throw new Error(`0G Storage upload failed: ${error.message}`);
+           }
+        }
 
-        async downloadFromStorage(contentHash) {
+        async downloadFromStorage(contentHash) {
         await this.initialize(); // Ensure services are initialized
-             if (!this.storage) {
-                console.error('❌ [downloadFromStorage] Storage service not available.');
-                throw new Error('0G Storage is not initialized or configured.');
-            }
+           if (!this.storage) {
+              console.error('❌ [downloadFromStorage] Storage service not available.');
+              throw new Error('0G Storage is not initialized or configured.');
+           }
 
-            console.log(`[downloadFromStorage] Downloading data from 0G Storage with hash: ${contentHash}`);
-            try {
-                const dataString = await this.storage.download(contentHash);
+           console.log(`[downloadFromStorage] Downloading data from 0G Storage with hash: ${contentHash}`);
+           try {
+               const dataString = await this.storage.download(contentHash);
                 if (dataString === null || dataString === undefined) {
                      throw new Error(`No data found for content hash ${contentHash}`);
                 }
-                console.log('✅ [downloadFromStorage] Data downloaded successfully.');
-                try {
+               console.log('✅ [downloadFromStorage] Data downloaded successfully.');
+               try {
                   // Attempt to parse only if it looks like JSON
                   if (typeof dataString === 'string' && dataString.trim().startsWith('{') && dataString.trim().endsWith('}')) {
                       return JSON.parse(dataString);
                   }
                    return dataString; // Return as string otherwise
-                } catch (parseError) {
-                    console.warn(`⚠️ [downloadFromStorage] Downloaded data for ${contentHash} is not valid JSON, returning as string.`);
-                    return dataString;
-                }
-            } catch (error) {
-                 console.error(`❌ [downloadFromStorage] Storage download error for hash ${contentHash}:`, error);
-                throw new Error(`0G Storage download failed for hash ${contentHash}: ${error.message}`);
-            }
-        }
+               } catch (parseError) {
+                   console.warn(`⚠️ [downloadFromStorage] Downloaded data for ${contentHash} is not valid JSON, returning as string.`);
+                   return dataString;
+               }
+           } catch (error) {
+              console.error(`❌ [downloadFromStorage] Storage download error for hash ${contentHash}:`, error);
+               throw new Error(`0G Storage download failed for hash ${contentHash}: ${error.message}`);
+           }
+        }
     // --- End Storage Methods ---
 
 } // End of ZeroGService Class
