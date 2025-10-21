@@ -154,31 +154,26 @@ export class ZeroGService {
     } catch (error) {
       console.error('❌ Failed to initialize 0G services:', error);
       this.initialized = false;
-      // Re-throw the error to prevent the server from starting incorrectly
       throw new Error(`Failed to initialize 0G services: ${error.message}`);
     }
   }
 
-  // --- deployModel function REMOVED ---
-
-  // Invoke model using the correct broker methods
   async invokeModel(invocationParams) {
-    await this.initialize(); // Ensure services are initialized
+    await this.initialize();
     if (!this.compute) throw new Error("0G Compute Broker not initialized.");
     if (!this.ledger) throw new Error("0G Ledger Broker not initialized.");
     if (!this.defaultProviderAddress) throw new Error("ZEROG_PROVIDER_ADDRESS is not configured in environment variables.");
 
     const providerAddress = this.defaultProviderAddress;
-    const modelIdForRequest = invocationParams.modelId; // Using the predefined ID passed in
 
     try {
       console.log(`[invokeModel] Getting service metadata for provider: ${providerAddress}`);
-      // Ensure provider is registered and get metadata
       let endpoint, providerModelMapping;
        try {
            const metadata = await this.compute.getServiceMetadata(providerAddress);
            endpoint = metadata.endpoint;
-           providerModelMapping = metadata.model; // The model ID the provider expects (might differ)
+           providerModelMapping = metadata.model; 
+           console.log(`[invokeModel] Retrieved service metadata. Endpoint: ${endpoint}, Provider Model Mapping: ${providerModelMapping || 'N/A'}`);
        } catch (metaError) {
            console.error(`❌ Failed to get service metadata for provider ${providerAddress}: ${metaError.message}`);
             if (metaError.message.toLowerCase().includes('provider not registered')) {
@@ -192,72 +187,67 @@ export class ZeroGService {
       }
       console.log(`[invokeModel] Using endpoint: ${endpoint}, Provider model mapping: ${providerModelMapping || 'N/A'}`);
 
-       // Use the model ID provided in the request
-      console.log(`[invokeModel] Requesting model ID: ${modelIdForRequest}`);
+      console.log(`[invokeModel] Requesting model ID: ${providerModelMapping}`);
 
       console.log(`[invokeModel] Preparing billing signature content (prompt length: ${invocationParams.prompt.length})`);
-      const billingContent = invocationParams.prompt; // The content used for billing signature
+      const billingContent = invocationParams.prompt; 
 
-      // Acknowledge provider's signer - crucial for billing/verification
       try {
         await this.compute.acknowledgeProviderSigner(providerAddress);
         console.log(`[invokeModel] Acknowledged provider signer for ${providerAddress}`);
       } catch (ackError) {
            console.warn(`⚠️ Could not acknowledge provider signer ${providerAddress}: ${ackError.message}. Verification might fail.`);
-           // Depending on strictness, you might throw here
-           // throw new Error(`Failed to acknowledge provider signer: ${ackError.message}`);
       }
 
-      // Generate request headers including the signature
       const headers = await this.compute.getRequestHeaders(providerAddress, billingContent);
-      // console.log('[invokeModel] Generated Headers:', headers); // Avoid logging sensitive headers in production
 
       console.log(`[invokeModel] Sending request to AI provider endpoint: ${endpoint}/chat/completions`);
       const requestPayload = {
-        // Use the model ID requested by your app, provider endpoint should handle mapping if needed
-        model: modelIdForRequest,
+        model: providerModelMapping,
         messages: [{ role: "user", content: invocationParams.prompt }],
         ...(invocationParams.maxTokens && { max_tokens: invocationParams.maxTokens }),
         ...(invocationParams.temperature && { temperature: invocationParams.temperature }),
-        stream: false, // Explicitly set stream to false unless handling streaming
+        stream: false, 
       };
+      console.log(`[invokeModel] Request payload prepared. Model: ${requestPayload.model}, Max Tokens: ${requestPayload.max_tokens || 'default'}, Temperature: ${requestPayload.temperature || 'default'}`);
+
+      // const axiosResponse = await fetch(`${endpoint}/chat/completions`, {
+      //   method: "POST",
+      //   headers: { "Content-Type": "application/json", ...headers },
+      //   body: JSON.stringify({
+      //     model: requestPayload.model,
+      //   }),
+      // });
 
       const axiosResponse = await axios.post(`${endpoint}/chat/completions`, requestPayload, {
         headers: {
-          ...headers, // Includes billing/signature headers
+          ...headers, 
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        timeout: PROVIDER_TIMEOUT_MS, // Use configured timeout
+        timeout: PROVIDER_TIMEOUT_MS, 
       });
 
-      console.log('[invokeModel] Received response from AI provider.');
+      console.log('[invokeModel] Received response from AI provider.',axiosResponse);
 
-      // --- Extract data and process response ---
       let responseContent = '';
-      // Header for trace/chat ID might vary, check provider docs (e.g., 'x-trace-id', 'trace_id', 'X-Request-ID')
-      // Also check if ID is in response body (OpenAI format: response.data.id)
        let chatId = axiosResponse.headers['x-trace-id']
                     || axiosResponse.headers['trace_id']
-                    || axiosResponse.headers['x-request-id'] // Common alternative
-                    || axiosResponse.data?.id // Standard OpenAI response ID
+                    || axiosResponse.headers['x-request-id']
+                    || axiosResponse.data?.id 
                     || null;
 
-      // Adapt based on actual response structure (OpenAI example)
       if (axiosResponse.data && axiosResponse.data.choices && axiosResponse.data.choices.length > 0) {
-        // Handle potential variations in response structure
         const choice = axiosResponse.data.choices[0];
         if (choice.message && choice.message.content) {
             responseContent = choice.message.content.trim();
-        } else if (choice.text) { // Some models might use 'text'
+        } else if (choice.text) { 
             responseContent = choice.text.trim();
         }
       }
 
        if (!responseContent && axiosResponse.data) {
-           // Fallback if choices structure isn't matched
             console.warn('[invokeModel] Could not extract content from choices. Raw response data:', JSON.stringify(axiosResponse.data).substring(0, 500) + '...');
-            // Attempt to find content elsewhere or stringify
             responseContent = JSON.stringify(axiosResponse.data);
        } else if (!responseContent) {
            console.warn('[invokeModel] No content extracted from AI response. Body was empty or unparseable.');
@@ -267,10 +257,8 @@ export class ZeroGService {
 
       console.log(`[invokeModel] Processing response. Chat/Trace ID: ${chatId || 'N/A'}, Content length: ${responseContent.length}`);
 
-      // processResponse handles payment settlement and verification
-      let isValid = null; // Default to null (unverified)
+      let isValid = null; 
       try {
-           // Only process if chatId is available, as it's needed for matching
            if (chatId) {
                isValid = await this.compute.processResponse(providerAddress, responseContent, chatId);
            } else {
@@ -278,28 +266,21 @@ export class ZeroGService {
            }
       } catch (processError) {
           console.error(`❌ Error during processResponse for Chat ID ${chatId}: ${processError.message}`);
-           // Decide how to handle this: log, return isValid as false, or re-throw
-           // isValid = false; // Example: Mark as failed verification on error
-           // Or re-throw if processing failure is critical
-           // throw new Error(`Failed to process response with 0G Compute: ${processError.message}`);
       }
 
-
-      // Handle verification result logging
       if (isValid === false) {
         console.warn(`⚠️ [invokeModel] Response verification failed for Chat ID: ${chatId}.`);
       } else if (isValid === null && chatId) {
         console.log(`[invokeModel] Response for Chat ID: ${chatId} could not be verified (may be non-verifiable service or processing issue).`);
       } else if (isValid === true) {
         console.log(`✅ [invokeModel] Response for Chat ID: ${chatId} processed and verified successfully.`);
-      } // No log if chatId was null initially
+      } 
 
-      // Return consistent structure
       return {
         output: responseContent,
-        modelId: invocationParams.modelId, // The model requested by your app
-        providerModelId: modelIdForRequest, // The model ID sent to the provider endpoint
-        chatId: chatId, // The trace/chat ID from the provider
+        modelId: invocationParams.modelId,
+        providerModelId: providerModelMapping, 
+        chatId: chatId,
         verified: isValid,
         timestamp: Date.now()
       };
@@ -310,7 +291,6 @@ export class ZeroGService {
         console.error('   Axios Error Status:', error.response?.status);
         console.error('   Axios Error Data:', JSON.stringify(error.response?.data, null, 2));
         console.error('   Axios Request URL:', error.config?.url);
-        // More specific error message for Axios errors
         const providerErrorMsg = error.response?.data?.error?.message || error.response?.data?.message || error.message;
         throw new Error(`AI provider request failed with status ${error.response?.status}: ${providerErrorMsg}`);
       } else if (error.message && (error.message.includes('AccountNotExists') || error.message.includes('Ledger account not found'))) {
@@ -325,15 +305,12 @@ export class ZeroGService {
         console.error('   Generic Error:', error);
         console.error(error.stack);
       }
-      // Re-throw a user-friendly or wrapped error
       throw new Error(`Model invocation failed. Please check backend logs. Original error: ${error.message}`);
     }
   }
 
-
-  // --- Storage Methods ---
   async uploadToStorage(data, tags = {}) {
-    await this.initialize(); // Ensure services are initialized
+    await this.initialize();
     if (!this.storage) {
       console.error('❌ [uploadToStorage] Storage service not available.');
       throw new Error('0G Storage is not initialized or configured.');

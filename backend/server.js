@@ -30,7 +30,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// AI inference endpoint (Modified)
 app.post('/api/analyze', async (req, res) => {
   try {
     const { content, documentId, analysisType = 'general' } = req.body;
@@ -41,8 +40,7 @@ app.post('/api/analyze', async (req, res) => {
 
     console.log(`🔍 Processing analysis request for document: ${documentId}`);
 
-    // *** Use a predefined model ID from .env or fallback ***
-    const modelId = process.env.ZEROG_DEFAULT_MODEL_ID || 'distilbert-base-uncased';
+    const modelId = process.env.ZEROG_DEFAULT_MODEL_ID || 'phala/gpt-oss-120b';
 
     let prompt, maxTokens;
 
@@ -55,7 +53,7 @@ app.post('/api/analyze', async (req, res) => {
         prompt = `Explain the following text in simple terms:\n\n${content}`;
         maxTokens = 400;
         break;
-      case 'change': // Change analysis might use the same general model with a specific prompt
+      case 'change': 
         prompt = `Analyze these document changes and provide a brief summary:\n\n${content}`;
         maxTokens = 150;
         break;
@@ -64,26 +62,22 @@ app.post('/api/analyze', async (req, res) => {
         maxTokens = 500;
     }
 
-    // Track cost before processing using the *predefined* modelId
-    // Ensure inputLength accurately reflects token count if possible, otherwise character count is an approximation
-    await costManager.trackRequest(modelId, prompt.length); // Using prompt length as proxy for input tokens
+    await costManager.trackRequest(modelId, prompt.length); 
 
     const response = await zeroGService.invokeModel({
-      modelId, // Pass the predefined model ID
       prompt,
       maxTokens,
-      temperature: 0.3 // Adjust temperature as needed
+      temperature: 0.3 
     });
+    console.log('✅ Model invocation successful');
 
-    // Calculate cost based on actual input and output lengths (approximated by char count here)
     const cost = await costManager.calculateCost(modelId, prompt.length, response.output.length);
 
     res.json({
       success: true,
       analysis: response.output,
-      // Use chatId or traceId as proof if computeProof isn't available from invokeModel
       proof: response.chatId || response.traceId || null,
-      modelId: response.providerModelId || modelId, // Use provider's actual model ID if returned
+      modelId: response.providerModelId || modelId,
       timestamp: response.timestamp,
       cost: cost
     });
@@ -97,22 +91,19 @@ app.post('/api/analyze', async (req, res) => {
         message: error.message
       });
     } else if (error.message.includes('AI provider request failed') || error.message.includes('Account') || error.message.includes('funds')) {
-      // Pass through specific errors from invokeModel
        res.status(500).json({
          error: 'AI Processing Error',
-         message: error.message // Provide the specific error from ZeroGService
+         message: error.message 
        });
     } else {
       res.status(500).json({
         error: 'Analysis failed',
-        message: 'An unexpected error occurred during analysis.' // Generic fallback
+        message: 'An unexpected error occurred during analysis.'
       });
     }
   }
 });
 
-
-// Document change analysis endpoint
 app.post('/api/analyze-changes', async (req, res) => {
   try {
     const { previousContent, currentContent, documentId, author } = req.body;

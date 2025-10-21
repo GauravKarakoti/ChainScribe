@@ -8,7 +8,7 @@ export class CostManager {
     // *** Define rates for PREDEFINED models ***
     // Replace these with actual rates from 0G documentation or provider
     this.modelRates = {
-      'distilbert-base-uncased': { input: 0.0000002, output: 0.000001 }, // Example: $/char (adjust if token-based)
+      'phala/gpt-oss-120b': { input: 0.0000002, output: 0.000001 }, // Example: $/char (adjust if token-based)
       'default-fallback': { input: 0.0000002, output: 0.000001 }    // Fallback if model not listed
       // Add other predefined models you might use
       // 'another-model-id': { input: X, output: Y },

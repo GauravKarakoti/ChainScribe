@@ -27,12 +27,12 @@ export const DocuSenseToolbar = ({ selectedText, documentId, onAIResponse }) => 
       label: 'Find Related',
       icon: Link2,
       prompt: 'Based on this content, suggest 3-5 related documentation topics with brief explanations:',
-      color: 'text-purple-600' // Ensure colors match Tailwind config
+      color: 'text-purple-600' 
     }
   ];
 
   const handleToolClick = async (tool) => {
-    if (!selectedText || isProcessing) return; // Prevent multiple clicks
+    if (!selectedText || isProcessing) return; 
 
     setIsProcessing(true);
     setActiveTool(tool.name);
@@ -40,25 +40,22 @@ export const DocuSenseToolbar = ({ selectedText, documentId, onAIResponse }) => 
     try {
       console.log(`🔄 Processing with ${tool.label}...`);
 
-      // *** CORRECTED invokeModel call ***
       const response = await invokeModel({
-        analysisType: tool.name, // Send analysisType based on tool name
-        prompt: `${tool.prompt}\n\n"${selectedText}"`, // Keep constructed prompt
-        documentId: documentId, // Pass documentId if needed by backend (it is used in your backend)
-        // maxTokens and temperature are now handled by the backend based on analysisType
+        analysisType: tool.name,
+        prompt: `${tool.prompt}\n\n"${selectedText}"`, 
+        documentId: documentId, 
       });
 
       console.log('✅ AI Response received:', response);
 
-      // Pass the relevant data to the parent component
       onAIResponse({
         tool: tool.name,
         originalText: selectedText,
         aiResponse: response.output,
-        proof: response.proof, // This might be chatId/traceId
-        modelId: response.modelId, // The actual model used by backend
+        proof: response.proof,
+        modelId: response.modelId,
         timestamp: response.timestamp,
-        cost: response.cost // Pass cost if available
+        cost: response.cost
       });
 
     } catch (error) {

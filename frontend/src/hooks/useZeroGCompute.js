@@ -61,16 +61,14 @@ export const useZeroGCompute = () => {
   };
 
   const invokeModel = async (params) => {
-    if (!params.analysisType || !params.prompt) { // Use analysisType and prompt
+    if (!params.analysisType || !params.prompt) { 
       throw new Error('Analysis type and prompt are required');
     }
 
-    // Model ID is now determined by the backend based on analysisType
     console.log(`🤖 Requesting analysis: ${params.analysisType}`);
     console.log(`📝 Prompt length: ${params.prompt.length} characters`);
 
     try {
-      // Ensure backend URL is correctly configured
       const backendUrl = import.meta.env.VITE_BACKEND_URL;
       if (!backendUrl) {
            throw new Error("VITE_BACKEND_URL is not defined in the environment variables.");
@@ -82,37 +80,32 @@ export const useZeroGCompute = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          content: params.prompt, // Send the raw prompt content
+          content: params.prompt, 
           documentId: params.documentId,
-          analysisType: params.analysisType, // Send the type for backend logic
+          analysisType: params.analysisType, 
         }),
       });
 
-      const responseData = await response.json(); // Always try to parse JSON
+      const responseData = await response.json(); 
 
       if (!response.ok) {
-        // Use error message from backend if available, otherwise use status text
         throw new Error(responseData.message || responseData.error || `HTTP error! status: ${response.status}`);
       }
 
       console.log('✅ Analysis successful:', responseData);
 
-      // Return structure matches backend response
       return {
         output: responseData.analysis,
-        proof: responseData.proof, // This might be chatId/traceId now
-        modelId: responseData.modelId, // Model ID used by provider
+        proof: responseData.proof,
+        modelId: responseData.modelId,
         timestamp: responseData.timestamp,
-        cost: responseData.cost // Include cost if backend provides it
+        cost: responseData.cost
       };
     } catch (error) {
       console.error('❌ Analysis invocation failed:', error);
-      // Re-throw error for UI handling
       throw new Error(`AI processing failed: ${error.message}`);
     }
   };
-
-  // --- getAvailableModels function REMOVED ---
 
   const disconnect = () => {
     console.log('🔌 Disconnecting wallet...');
