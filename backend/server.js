@@ -53,7 +53,7 @@ app.post('/api/analyze', async (req, res) => {
         prompt = `Explain the following text in simple terms:\n\n${content}`;
         maxTokens = 400;
         break;
-      case 'change': 
+      case 'change':
         prompt = `Analyze these document changes and provide a brief summary:\n\n${content}`;
         maxTokens = 150;
         break;
@@ -62,12 +62,12 @@ app.post('/api/analyze', async (req, res) => {
         maxTokens = 500;
     }
 
-    await costManager.trackRequest(modelId, prompt.length); 
+    await costManager.trackRequest(modelId, prompt.length);
 
     const response = await zeroGService.invokeModel({
       prompt,
       maxTokens,
-      temperature: 0.3 
+      temperature: 0.3
     });
     console.log('✅ Model invocation successful');
 
@@ -93,7 +93,7 @@ app.post('/api/analyze', async (req, res) => {
     } else if (error.message.includes('AI provider request failed') || error.message.includes('Account') || error.message.includes('funds')) {
        res.status(500).json({
          error: 'AI Processing Error',
-         message: error.message 
+         message: error.message
        });
     } else {
       res.status(500).json({

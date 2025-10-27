@@ -172,7 +172,7 @@ export class ZeroGService {
        try {
            const metadata = await this.compute.getServiceMetadata(providerAddress);
            endpoint = metadata.endpoint;
-           providerModelMapping = metadata.model; 
+           providerModelMapping = metadata.model;
            console.log(`[invokeModel] Retrieved service metadata. Endpoint: ${endpoint}, Provider Model Mapping: ${providerModelMapping || 'N/A'}`);
        } catch (metaError) {
            console.error(`❌ Failed to get service metadata for provider ${providerAddress}: ${metaError.message}`);
@@ -190,7 +190,7 @@ export class ZeroGService {
       console.log(`[invokeModel] Requesting model ID: ${providerModelMapping}`);
 
       console.log(`[invokeModel] Preparing billing signature content (prompt length: ${invocationParams.prompt.length})`);
-      const billingContent = invocationParams.prompt; 
+      const billingContent = invocationParams.prompt;
 
       try {
         await this.compute.acknowledgeProviderSigner(providerAddress);
@@ -207,7 +207,7 @@ export class ZeroGService {
         messages: [{ role: "user", content: invocationParams.prompt }],
         ...(invocationParams.maxTokens && { max_tokens: invocationParams.maxTokens }),
         ...(invocationParams.temperature && { temperature: invocationParams.temperature }),
-        stream: false, 
+        stream: false,
       };
       console.log(`[invokeModel] Request payload prepared. Model: ${requestPayload.model}, Max Tokens: ${requestPayload.max_tokens || 'default'}, Temperature: ${requestPayload.temperature || 'default'}`);
 
@@ -221,11 +221,11 @@ export class ZeroGService {
 
       const axiosResponse = await axios.post(`${endpoint}/chat/completions`, requestPayload, {
         headers: {
-          ...headers, 
+          ...headers,
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        timeout: PROVIDER_TIMEOUT_MS, 
+        timeout: PROVIDER_TIMEOUT_MS,
       });
 
       console.log('[invokeModel] Received response from AI provider.',axiosResponse);
@@ -234,14 +234,14 @@ export class ZeroGService {
        let chatId = axiosResponse.headers['x-trace-id']
                     || axiosResponse.headers['trace_id']
                     || axiosResponse.headers['x-request-id']
-                    || axiosResponse.data?.id 
+                    || axiosResponse.data?.id
                     || null;
 
       if (axiosResponse.data && axiosResponse.data.choices && axiosResponse.data.choices.length > 0) {
         const choice = axiosResponse.data.choices[0];
         if (choice.message && choice.message.content) {
             responseContent = choice.message.content.trim();
-        } else if (choice.text) { 
+        } else if (choice.text) {
             responseContent = choice.text.trim();
         }
       }
@@ -257,7 +257,7 @@ export class ZeroGService {
 
       console.log(`[invokeModel] Processing response. Chat/Trace ID: ${chatId || 'N/A'}, Content length: ${responseContent.length}`);
 
-      let isValid = null; 
+      let isValid = null;
       try {
            if (chatId) {
                isValid = await this.compute.processResponse(providerAddress, responseContent, chatId);
@@ -274,12 +274,12 @@ export class ZeroGService {
         console.log(`[invokeModel] Response for Chat ID: ${chatId} could not be verified (may be non-verifiable service or processing issue).`);
       } else if (isValid === true) {
         console.log(`✅ [invokeModel] Response for Chat ID: ${chatId} processed and verified successfully.`);
-      } 
+      }
 
       return {
         output: responseContent,
         modelId: invocationParams.modelId,
-        providerModelId: providerModelMapping, 
+        providerModelId: providerModelMapping,
         chatId: chatId,
         verified: isValid,
         timestamp: Date.now()

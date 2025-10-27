@@ -27,12 +27,12 @@ export const DocuSenseToolbar = ({ selectedText, documentId, onAIResponse }) => 
       label: 'Find Related',
       icon: Link2,
       prompt: 'Based on this content, suggest 3-5 related documentation topics with brief explanations:',
-      color: 'text-purple-600' 
+      color: 'text-purple-600'
     }
   ];
 
   const handleToolClick = async (tool) => {
-    if (!selectedText || isProcessing) return; 
+    if (!selectedText || isProcessing) return;
 
     setIsProcessing(true);
     setActiveTool(tool.name);
@@ -42,8 +42,8 @@ export const DocuSenseToolbar = ({ selectedText, documentId, onAIResponse }) => 
 
       const response = await invokeModel({
         analysisType: tool.name,
-        prompt: `${tool.prompt}\n\n"${selectedText}"`, 
-        documentId: documentId, 
+        prompt: `${tool.prompt}\n\n"${selectedText}"`,
+        documentId: documentId,
       });
 
       console.log('✅ AI Response received:', response);

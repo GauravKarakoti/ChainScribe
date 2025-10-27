@@ -61,7 +61,7 @@ export const useZeroGCompute = () => {
   };
 
   const invokeModel = async (params) => {
-    if (!params.analysisType || !params.prompt) { 
+    if (!params.analysisType || !params.prompt) {
       throw new Error('Analysis type and prompt are required');
     }
 
@@ -80,13 +80,13 @@ export const useZeroGCompute = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          content: params.prompt, 
+          content: params.prompt,
           documentId: params.documentId,
-          analysisType: params.analysisType, 
+          analysisType: params.analysisType,
         }),
       });
 
-      const responseData = await response.json(); 
+      const responseData = await response.json();
 
       if (!response.ok) {
         throw new Error(responseData.message || responseData.error || `HTTP error! status: ${response.status}`);

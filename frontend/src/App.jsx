@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useZeroGCompute } from './hooks/useZeroGCompute'; 
+import { useZeroGCompute } from './hooks/useZeroGCompute';
 import { DocuSenseToolbar } from './components/DocuSenseToolbar';
 import ChangeHistory from './components/ChangeHistory';
 import { Shield, Cpu, Database, Wallet, AlertCircle } from 'lucide-react';
@@ -13,7 +13,7 @@ function App() {
     signer,
     error,
     connectWallet,
-    invokeModel,
+    invokeModel, // Get invokeModel from the hook
   } = useZeroGCompute();
 
   const [selectedText, setSelectedText] = useState('');
@@ -40,33 +40,36 @@ function App() {
 
   const handleAIResponse = (response) => {
     setAiResponses(prev => [response, ...prev]);
-    
+
     // Also add to change history
     const newChange = {
       summary: `AI analysis performed: ${response.tool}`,
-      changeType: 'major',
+      changeType: 'major', // AI actions are considered major changes
       timestamp: response.timestamp,
       author: signer?.address ? `${signer.address.substring(0, 6)}...${signer.address.substring(signer.address.length - 4)}` : 'Unknown',
-      documentId: 'demo-doc-1',
-      proof: response.proof,
+      documentId: 'demo-doc-1', // Assuming a single doc for now
+      proof: response.proof, // The trace/chat ID from compute
       modelId: response.modelId,
       requiresAI: true,
-      aiResponse: response.aiResponse
+      aiResponse: response.aiResponse // Store the actual AI output
     };
-    
+
     setChanges(prev => [newChange, ...prev]);
     console.log('AI Response logged:', response);
   };
 
   const handleContentChange = (newContent) => {
     setDocumentContent(newContent);
+    // Add logic here to trigger change analysis (potentially debounced)
+    // and save new versions via backend/smart contract if needed
   };
 
   useEffect(() => {
+    // Attempt to auto-connect if wallet is already connected/authorized
     if (window.ethereum && window.ethereum.selectedAddress && !isConnected && !isLoading) {
-      connectWallet(); // Changed from connectWalletAndInitialize
+      connectWallet();
     }
-  }, []);
+  }, []); // Run only once on mount
 
   return (
     <div className="app">
@@ -89,7 +92,7 @@ function App() {
             </div>
           ) : (
             <button
-              onClick={connectWallet} // Changed from connectWalletAndInitialize
+              onClick={connectWallet}
               disabled={isLoading}
               className="connect-button"
             >
@@ -97,23 +100,25 @@ function App() {
             </button>
           )}
         </div>
-        
+
         {/* Status indicators */}
         <div className="status-indicators">
           <div className="status-item">
             <Database size={16} />
             <span>0G Storage</span>
+            {/* Replace with actual storage status check if available */}
             <div className="status-dot connected"></div>
           </div>
           <div className="status-item">
             <Cpu size={16} />
             <span>0G Compute</span>
+            {/* Compute status depends on backend health & wallet connection for potential signing */}
             <div className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`}></div>
           </div>
           <div className="status-item">
             <Shield size={16} />
             <span>Verifiable AI</span>
-            <div className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`}></div>
+             <div className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`}></div>
           </div>
         </div>
       </header>
@@ -132,12 +137,12 @@ function App() {
           <aside className="sidebar">
             <DocuSenseToolbar
               selectedText={selectedText}
-              documentId="demo-doc-1"
+              documentId="demo-doc-1" // Pass the current document ID
               onAIResponse={handleAIResponse}
-              invokeModel={invokeModel}
-              isConnected={isConnected}
+              // invokeModel={invokeModel} // invokeModel is now handled within the toolbar via the hook
+              // isConnected={isConnected} // isConnected is also available via the hook within the toolbar
             />
-            
+
             <ChangeHistory changes={changes} />
           </aside>
 
@@ -147,7 +152,7 @@ function App() {
                 value={documentContent}
                 onChange={(e) => handleContentChange(e.target.value)}
                 onMouseUp={handleTextSelection}
-                onKeyUp={handleTextSelection}
+                onKeyUp={handleTextSelection} // Added onKeyUp for better selection updates
                 placeholder="Start writing your documentation here... Select text to use AI tools."
                 className="editor-textarea"
               />
@@ -179,10 +184,12 @@ function App() {
                   <div className="response-content">
                     <p>{response.aiResponse}</p>
                   </div>
-                  {response.proof && (
+                  {response.proof && ( // Check if proof (chatId) exists
                     <div className="verification-badge">
                       <Shield size={12} />
                       <span>Verified with 0G Compute</span>
+                       {/* Optionally display part of the proof ID */}
+                       {/* <small className="ml-2 opacity-50">({response.proof.substring(0, 8)}...)</small> */}
                     </div>
                   )}
                 </div>
@@ -196,7 +203,7 @@ function App() {
           <p>Connect your wallet to access decentralized AI-powered documentation features.</p>
           <p>Experience verifiable AI inference powered by 0G Compute Network.</p>
           <button
-            onClick={connectWallet} // Changed from connectWalletAndInitialize
+            onClick={connectWallet}
             disabled={isLoading}
             className="connect-button-large"
           >
