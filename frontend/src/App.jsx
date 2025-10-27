@@ -6,6 +6,16 @@ import { Shield, Cpu, Database, Wallet, AlertCircle } from 'lucide-react';
 import './index.css';
 import './App.css';
 
+// Function to remove markdown list markers
+const removeMarkdownListMarkers = (text) => {
+  if (typeof text !== 'string') {
+    return text; // Return original if not a string
+  }
+  // Remove *, #, - at the beginning of lines, optionally followed by a space
+  return text.replace(/^[*\-#]\s*/gm, '');
+};
+
+
 function App() {
   const {
     isConnected,
@@ -39,23 +49,29 @@ function App() {
   };
 
   const handleAIResponse = (response) => {
-    setAiResponses(prev => [response, ...prev]);
+    // Clean the AI response before adding it to the state
+    const cleanedResponse = {
+      ...response,
+      aiResponse: removeMarkdownListMarkers(response.aiResponse)
+    };
+    setAiResponses(prev => [cleanedResponse, ...prev]);
 
-    // Also add to change history
+
+    // Also add to change history (using the cleaned response if needed for summary)
     const newChange = {
-      summary: `AI analysis performed: ${response.tool}`,
+      summary: `AI analysis performed: ${cleanedResponse.tool}`, // Use cleanedResponse here too if summary is derived from it
       changeType: 'major', // AI actions are considered major changes
-      timestamp: response.timestamp,
+      timestamp: cleanedResponse.timestamp,
       author: signer?.address ? `${signer.address.substring(0, 6)}...${signer.address.substring(signer.address.length - 4)}` : 'Unknown',
       documentId: 'demo-doc-1', // Assuming a single doc for now
-      proof: response.proof, // The trace/chat ID from compute
-      modelId: response.modelId,
+      proof: cleanedResponse.proof, // The trace/chat ID from compute
+      modelId: cleanedResponse.modelId,
       requiresAI: true,
-      aiResponse: response.aiResponse // Store the actual AI output
+      aiResponse: cleanedResponse.aiResponse // Store the cleaned AI output
     };
 
     setChanges(prev => [newChange, ...prev]);
-    console.log('AI Response logged:', response);
+    console.log('AI Response logged (cleaned):', cleanedResponse);
   };
 
   const handleContentChange = (newContent) => {
@@ -182,6 +198,7 @@ function App() {
                     </span>
                   </div>
                   <div className="response-content">
+                    {/* Display the cleaned aiResponse */}
                     <p>{response.aiResponse}</p>
                   </div>
                   {response.proof && ( // Check if proof (chatId) exists
