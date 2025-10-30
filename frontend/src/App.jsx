@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useZeroGCompute } from './hooks/useZeroGCompute';
 import { DocuSenseToolbar } from './components/DocuSenseToolbar';
 import ChangeHistory from './components/ChangeHistory';
+import KnowledgeGraphPanel from './components/KnowledgeGraphPanel';
 import { Shield, Cpu, Database, Wallet, AlertCircle } from 'lucide-react';
 import './index.css';
 import './App.css';
@@ -29,6 +30,7 @@ function App() {
   const [selectedText, setSelectedText] = useState('');
   const [documentContent, setDocumentContent] = useState('');
   const [aiResponses, setAiResponses] = useState([]);
+  const [knowledgeGraphData, setKnowledgeGraphData] = useState({ nodes: [], edges: [] });
   const [changes, setChanges] = useState([
     // Mock data for demonstration
     {
@@ -42,6 +44,37 @@ function App() {
       requiresAI: true
     }
   ]);
+
+  const fetchGraphData = async () => {
+      if (!isConnected) return; // Only fetch if connected
+      setIsGraphLoading(true);
+      setGraphError(null);
+      console.log("📊 Fetching graph data from backend...");
+      try {
+          const backendUrl = import.meta.env.VITE_BACKEND_URL;
+          if (!backendUrl) throw new Error("Backend URL not configured");
+
+          const response = await fetch(`${backendUrl}/api/graph/data`);
+          const data = await response.json();
+
+          if (!response.ok) {
+              throw new Error(data.message || data.error || 'Failed to fetch graph data');
+          }
+
+          if (data.success && data.data) {
+              setKnowledgeGraphData(data.data);
+              console.log("✅ Graph data loaded:", data.data);
+          } else {
+                throw new Error("Invalid graph data format received from backend");
+          }
+      } catch (err) {
+          console.error("❌ Error fetching graph data:", err);
+          setGraphError(err.message);
+          setKnowledgeGraphData({ nodes: [], edges: [] }); // Reset on error
+      } finally {
+          setIsGraphLoading(false);
+      }
+  };
 
   const handleTextSelection = () => {
     const selection = window.getSelection().toString().trim();
@@ -79,6 +112,15 @@ function App() {
     // Add logic here to trigger change analysis (potentially debounced)
     // and save new versions via backend/smart contract if needed
   };
+
+  useEffect(() => {
+      if (isConnected) {
+          fetchGraphData();
+      } else {
+          // Reset graph data if wallet disconnects
+          setKnowledgeGraphData({ nodes: [], edges: [] });
+      }
+  }, [isConnected]);
 
   useEffect(() => {
     // Attempt to auto-connect if wallet is already connected/authorized
@@ -136,6 +178,11 @@ function App() {
             <span>Verifiable AI</span>
              <div className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`}></div>
           </div>
+          <div className="status-item">
+            <Share2 size={16} /> {/* Using Share2 icon for graph */}
+            <span>Knowledge Graph</span>
+            <div className={`status-dot ${knowledgeGraphData.nodes.length > 0 ? 'connected' : 'disconnected'}`}></div>
+          </div> 
         </div>
       </header>
 
@@ -149,16 +196,13 @@ function App() {
 
       {/* Main Content */}
       {isConnected ? (
-        <div className="app-layout">
+        <div className="app-layout" style={{ gridTemplateColumns: '300px 1fr 300px 300px' }}> {/* Added 4th column */}
           <aside className="sidebar">
             <DocuSenseToolbar
               selectedText={selectedText}
-              documentId="demo-doc-1" // Pass the current document ID
+              documentId="demo-doc-1"
               onAIResponse={handleAIResponse}
-              // invokeModel={invokeModel} // invokeModel is now handled within the toolbar via the hook
-              // isConnected={isConnected} // isConnected is also available via the hook within the toolbar
             />
-
             <ChangeHistory changes={changes} />
           </aside>
 
@@ -213,6 +257,18 @@ function App() {
               ))
             )}
           </aside>
+          <aside className="knowledge-graph-panel bg-dark border-l border-border p-4 overflow-auto">
+             <div className="flex items-center gap-2 mb-4 text-primary font-semibold">
+                <Share2 size={16} />
+                <span>Knowledge Graph</span>
+             </div>
+             <KnowledgeGraphPanel
+                 graphData={knowledgeGraphData}
+                 isLoading={isGraphLoading}
+                 error={graphError}
+                 onRefresh={fetchGraphData} // Pass refresh function
+             />
+           </aside>
         </div>
       ) : (
         <div className="connect-prompt">

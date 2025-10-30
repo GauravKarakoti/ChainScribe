@@ -10,6 +10,9 @@ dotenv.config();
 const LEDGER_FUNDING_AMOUNT = process.env.LEDGER_FUNDING_AMOUNT || '1'; // Amount in 0G tokens as string
 const PROVIDER_TIMEOUT_MS = parseInt(process.env.ZEROG_PROVIDER_TIMEOUT_MS || '120000', 10); // Default 120 seconds
 
+// --- NEW: Default ID for fine-tuned model (can be overridden) ---
+const DEFAULT_FINETUNED_MODEL_ID = process.env.ZEROG_DEFAULT_MODEL_ID || 'phala/gpt-oss-120b';
+
 export class ZeroGService {
   constructor() {
     const rpcUrl = process.env.ZEROG_RPC_URL || 'https://rpc-testnet.0g.ai'; // Updated default RPC
@@ -47,6 +50,8 @@ export class ZeroGService {
 
     this.compute = null;
     this.ledger = null;
+    // --- NEW: Placeholder for FineTuning broker ---
+    this.fineTuning = null;
     this.initialized = false;
   }
 
@@ -134,6 +139,32 @@ export class ZeroGService {
       );
       console.log('✅ Inference Broker created.');
 
+      // --- NEW: Initialize FineTuning Broker (Placeholder) ---
+      if (fineTuningContractAddress !== ZeroAddress) {
+          console.log("   Creating FineTuning Broker (Placeholder)...");
+          // TODO: Replace with actual FineTuning broker creation from 0G SDK when available
+          // Example: this.fineTuning = await createFineTuningBroker(...)
+          this.fineTuning = {
+              // Mock/Placeholder methods - replace with actual SDK calls
+              startFineTuningJob: async (params) => {
+                  console.log('[FineTuning Mock] Starting job with params:', params);
+                  await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate delay
+                  return { jobId: `ft-job-${Date.now()}`, status: 'pending' };
+              },
+              getJobStatus: async (jobId) => {
+                  console.log(`[FineTuning Mock] Getting status for job: ${jobId}`);
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  // Simulate completion after some time
+                  return { jobId, status: Math.random() > 0.5 ? 'completed' : 'running', modelId: Math.random() > 0.5 ? DEFAULT_FINETUNED_MODEL_ID : null };
+              }
+          };
+          console.log('✅ FineTuning Broker placeholder created.');
+      } else {
+           console.log("   FineTuning contract not configured, skipping broker creation.");
+      }
+      // --- END FineTuning Initialization ---
+
+
       // Storage connection check
       if (this.storage) {
         try {
@@ -165,6 +196,9 @@ export class ZeroGService {
     if (!this.defaultProviderAddress) throw new Error("ZEROG_PROVIDER_ADDRESS is not configured in environment variables.");
 
     const providerAddress = this.defaultProviderAddress;
+    // --- NEW: Determine model ID (allow specifying fine-tuned model) ---
+    const modelIdToUse = invocationParams.useFineTunedModel ? DEFAULT_FINETUNED_MODEL_ID : (invocationParams.modelId || process.env.ZEROG_DEFAULT_MODEL_ID || 'phala/gpt-oss-120b');
+
 
     try {
       console.log(`[invokeModel] Getting service metadata for provider: ${providerAddress}`);
@@ -172,8 +206,10 @@ export class ZeroGService {
        try {
            const metadata = await this.compute.getServiceMetadata(providerAddress);
            endpoint = metadata.endpoint;
-           providerModelMapping = metadata.model;
-           console.log(`[invokeModel] Retrieved service metadata. Endpoint: ${endpoint}, Provider Model Mapping: ${providerModelMapping || 'N/A'}`);
+           // --- NEW: Adjust provider mapping if using fine-tuned model (if necessary) ---
+           // This logic might need refinement based on how 0G handles fine-tuned model IDs/mappings
+           providerModelMapping = invocationParams.useFineTunedModel ? modelIdToUse : (metadata.model || modelIdToUse); // Use fine-tuned ID or fallback to provider's default/requested
+           console.log(`[invokeModel] Retrieved service metadata. Endpoint: ${endpoint}, Provider Model Mapping Used: ${providerModelMapping}`);
        } catch (metaError) {
            console.error(`❌ Failed to get service metadata for provider ${providerAddress}: ${metaError.message}`);
             if (metaError.message.toLowerCase().includes('provider not registered')) {
@@ -185,9 +221,9 @@ export class ZeroGService {
       if (!endpoint) {
         throw new Error(`Could not retrieve service endpoint for provider ${providerAddress}`);
       }
-      console.log(`[invokeModel] Using endpoint: ${endpoint}, Provider model mapping: ${providerModelMapping || 'N/A'}`);
+      console.log(`[invokeModel] Using endpoint: ${endpoint}, Provider model mapping: ${providerModelMapping}`);
 
-      console.log(`[invokeModel] Requesting model ID: ${providerModelMapping}`);
+      // console.log(`[invokeModel] Requesting model ID: ${providerModelMapping}`); // Redundant log
 
       console.log(`[invokeModel] Preparing billing signature content (prompt length: ${invocationParams.prompt.length})`);
       const billingContent = invocationParams.prompt;
@@ -203,21 +239,13 @@ export class ZeroGService {
 
       console.log(`[invokeModel] Sending request to AI provider endpoint: ${endpoint}/chat/completions`);
       const requestPayload = {
-        model: providerModelMapping,
+        model: providerModelMapping, // Use the determined model mapping
         messages: [{ role: "user", content: invocationParams.prompt }],
         ...(invocationParams.maxTokens && { max_tokens: invocationParams.maxTokens }),
         ...(invocationParams.temperature && { temperature: invocationParams.temperature }),
         stream: false,
       };
       console.log(`[invokeModel] Request payload prepared. Model: ${requestPayload.model}, Max Tokens: ${requestPayload.max_tokens || 'default'}, Temperature: ${requestPayload.temperature || 'default'}`);
-
-      // const axiosResponse = await fetch(`${endpoint}/chat/completions`, {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json", ...headers },
-      //   body: JSON.stringify({
-      //     model: requestPayload.model,
-      //   }),
-      // });
 
       const axiosResponse = await axios.post(`${endpoint}/chat/completions`, requestPayload, {
         headers: {
@@ -228,7 +256,7 @@ export class ZeroGService {
         timeout: PROVIDER_TIMEOUT_MS,
       });
 
-      console.log('[invokeModel] Received response from AI provider.',axiosResponse);
+      console.log('[invokeModel] Received response from AI provider.'); // Removed large object log
 
       let responseContent = '';
        let chatId = axiosResponse.headers['x-trace-id']
@@ -248,7 +276,8 @@ export class ZeroGService {
 
        if (!responseContent && axiosResponse.data) {
             console.warn('[invokeModel] Could not extract content from choices. Raw response data:', JSON.stringify(axiosResponse.data).substring(0, 500) + '...');
-            responseContent = JSON.stringify(axiosResponse.data);
+            // Consider returning the raw data or a specific error message
+            responseContent = `Error: Could not parse content from response. ID: ${chatId}`;
        } else if (!responseContent) {
            console.warn('[invokeModel] No content extracted from AI response. Body was empty or unparseable.');
            throw new Error('Received empty or unparseable response from AI provider.');
@@ -278,9 +307,9 @@ export class ZeroGService {
 
       return {
         output: responseContent,
-        modelId: invocationParams.modelId,
+        modelId: modelIdToUse, // Return the actual model ID used
         providerModelId: providerModelMapping,
-        chatId: chatId,
+        chatId: chatId, // Renamed from computeProof for clarity in this context
         verified: isValid,
         timestamp: Date.now()
       };
@@ -289,7 +318,8 @@ export class ZeroGService {
       console.error('❌ [invokeModel] Error during model invocation:');
       if (axios.isAxiosError(error)) {
         console.error('   Axios Error Status:', error.response?.status);
-        console.error('   Axios Error Data:', JSON.stringify(error.response?.data, null, 2));
+        // Avoid logging potentially large response data by default
+        console.error('   Axios Error Message:', error.response?.data?.error?.message || error.response?.data?.message || error.message);
         console.error('   Axios Request URL:', error.config?.url);
         const providerErrorMsg = error.response?.data?.error?.message || error.response?.data?.message || error.message;
         throw new Error(`AI provider request failed with status ${error.response?.status}: ${providerErrorMsg}`);
@@ -309,6 +339,45 @@ export class ZeroGService {
     }
   }
 
+  // --- NEW: Fine-Tuning Method Placeholder ---
+  async startFineTuning(params) {
+      await this.initialize();
+      if (!this.fineTuning) {
+          throw new Error("0G FineTuning Broker not initialized or configured.");
+      }
+      console.log(`[startFineTuning] Starting fine-tuning job...`);
+      try {
+          // TODO: Adapt params based on actual SDK requirements
+          const jobDetails = await this.fineTuning.startFineTuningJob({
+              datasetUrl: params.datasetUrl, // URL to training data on 0G Storage or elsewhere
+              baseModelId: params.baseModelId || process.env.ZEROG_DEFAULT_MODEL_ID,
+              // ... other fine-tuning parameters
+          });
+          console.log(`✅ [startFineTuning] Fine-tuning job started:`, jobDetails);
+          return jobDetails;
+      } catch (error) {
+          console.error('❌ [startFineTuning] Error starting fine-tuning job:', error);
+          throw new Error(`Failed to start fine-tuning job: ${error.message}`);
+      }
+  }
+
+  // --- NEW: Get Fine-Tuning Job Status Placeholder ---
+  async getFineTuningStatus(jobId) {
+      await this.initialize();
+      if (!this.fineTuning) {
+          throw new Error("0G FineTuning Broker not initialized or configured.");
+      }
+      console.log(`[getFineTuningStatus] Checking status for job: ${jobId}`);
+      try {
+          const status = await this.fineTuning.getJobStatus(jobId);
+          console.log(`✅ [getFineTuningStatus] Status for job ${jobId}:`, status);
+          return status;
+      } catch (error) {
+          console.error(`❌ [getFineTuningStatus] Error checking job status ${jobId}:`, error);
+          throw new Error(`Failed to get fine-tuning job status: ${error.message}`);
+      }
+  }
+
   async uploadToStorage(data, tags = {}) {
     await this.initialize();
     if (!this.storage) {
@@ -318,41 +387,52 @@ export class ZeroGService {
 
     console.log('[uploadToStorage] Uploading data to 0G Storage...');
     try {
-      const dataToUpload = typeof data === 'string' ? data : JSON.stringify(data);
+      // --- START: MODIFIED CODE ---
+      const dataString = typeof data === 'string' ? data : JSON.stringify(data);
       const contentType = typeof data === 'string' ? 'text/plain' : 'application/json';
 
+      // FIX: Convert the string data to a Buffer for the SDK
+      const dataToUpload = Buffer.from(dataString, 'utf-8');
+
+      console.log(`[uploadToStorage] Converted data to Buffer (size: ${dataToUpload.length} bytes)`);
+      // --- END: MODIFIED CODE ---
+
+      // Use the storage client's upload method
       const receipt = await this.storage.upload({
-        data: dataToUpload,
+        data: dataToUpload, // Pass the Buffer instead of the string
         tags: { ...tags, uploadedAt: new Date().toISOString(), contentType: contentType }
       });
 
+
       console.log('✅ [uploadToStorage] Data uploaded successfully. Receipt:', receipt);
-      // Return key details from the receipt
-      return {
-          contentHash: receipt.contentHash,
-          storageId: receipt.storageId,
-          txHash: receipt.txHash,
-          timestamp: receipt.timestamp || Date.now() // Use SDK timestamp or fallback
-      };
+      // Return key details based on the expected Indexer SDK response structure
+       return {
+           txHash: receipt.transactionHash, // Assuming transactionHash is returned
+           contentHash: receipt.messageKey,   // Assuming messageKey maps to content hash/identifier
+           storageId: receipt.messageKey,    // Using messageKey as a unique ID, adjust if needed
+           timestamp: receipt.timestamp || Date.now()
+       };
     } catch (error) {
       console.error('❌ [uploadToStorage] Storage upload error:', error);
       throw new Error(`0G Storage upload failed: ${error.message}`);
     }
   }
 
-  async downloadFromStorage(contentHash) {
+  async downloadFromStorage(contentHash) { // contentHash here likely corresponds to messageKey from upload
     await this.initialize(); // Ensure services are initialized
     if (!this.storage) {
       console.error('❌ [downloadFromStorage] Storage service not available.');
       throw new Error('0G Storage is not initialized or configured.');
     }
 
-    console.log(`[downloadFromStorage] Downloading data from 0G Storage with hash: ${contentHash}`);
+    console.log(`[downloadFromStorage] Downloading data from 0G Storage with identifier: ${contentHash}`);
     try {
+        // Use the storage client's download method with the messageKey
       const dataString = await this.storage.download(contentHash);
+
       if (dataString === null || dataString === undefined) {
         // Consistent error for not found
-        throw new Error(`No data found for content hash ${contentHash}`);
+        throw new Error(`No data found for identifier ${contentHash}`);
       }
       console.log('✅ [downloadFromStorage] Data downloaded successfully.');
 
@@ -367,12 +447,25 @@ export class ZeroGService {
         return dataString;
       }
     } catch (error) {
-      console.error(`❌ [downloadFromStorage] Storage download error for hash ${contentHash}:`, error);
+      console.error(`❌ [downloadFromStorage] Storage download error for identifier ${contentHash}:`, error);
       // Re-throw with more context
-      throw new Error(`0G Storage download failed for hash ${contentHash}: ${error.message}`);
+      throw new Error(`0G Storage download failed for identifier ${contentHash}: ${error.message}`);
     }
   }
-    // --- End Storage Methods ---
+
+  // --- NEW: Specific methods for Knowledge Graph data ---
+  async uploadGraphData(graphData, tags = {}) {
+      console.log('[uploadGraphData] Uploading knowledge graph data...');
+      // Add specific tags for graph data
+      const graphTags = { ...tags, dataType: 'knowledgeGraph', version: '1.0' };
+      return this.uploadToStorage(graphData, graphTags);
+  }
+
+  async downloadGraphData(contentHash) {
+      console.log(`[downloadGraphData] Downloading knowledge graph data with identifier: ${contentHash}`);
+      // No special logic needed for download unless filtering/validation is required
+      return this.downloadFromStorage(contentHash);
+  }
 
 } // End of ZeroGService Class
 
