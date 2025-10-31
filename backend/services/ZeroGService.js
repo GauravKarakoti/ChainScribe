@@ -17,6 +17,7 @@ export class ZeroGService {
   constructor() {
     const rpcUrl = process.env.ZEROG_RPC_URL || 'https://rpc-testnet.0g.ai'; // Updated default RPC
     const provider = new JsonRpcProvider(rpcUrl);
+    this.rpcUrl = rpcUrl;
 
     if (!process.env.DEPLOYER_PRIVATE_KEY) {
       throw new Error("❌ DEPLOYER_PRIVATE_KEY is missing in environment variables.");
@@ -387,31 +388,38 @@ export class ZeroGService {
 
     console.log('[uploadToStorage] Uploading data to 0G Storage...');
     try {
-      // --- START: MODIFIED CODE ---
       const dataString = typeof data === 'string' ? data : JSON.stringify(data);
       const contentType = typeof data === 'string' ? 'text/plain' : 'application/json';
-
-      // FIX: Convert the string data to a Buffer for the SDK
       const dataToUpload = Buffer.from(dataString, 'utf-8');
 
       console.log(`[uploadToStorage] Converted data to Buffer (size: ${dataToUpload.length} bytes)`);
-      // --- END: MODIFIED CODE ---
 
-      // Use the storage client's upload method
-      const receipt = await this.storage.upload({
-        data: dataToUpload, // Pass the Buffer instead of the string
-        tags: { ...tags, uploadedAt: new Date().toISOString(), contentType: contentType }
-      });
+      // 1. Wrap the Buffer in the SDK's AbstractFile class
+      // The second arg (filename) can be empty if not needed.
+      const fileToUpload = new AbstractFile([dataToUpload], '', { type: contentType }); 
 
+      // 2. Prepare tags for the options object
+      const uploadTags = { ...tags, uploadedAt: new Date().toISOString(), contentType: contentType };
+      console.log('[uploadToStorage] Upload tags prepared:', uploadTags);
+
+      // 3. Call upload with the correct 4-argument signature
+      const receipt = await this.storage.upload(
+        fileToUpload,       // Arg 1: The AbstractFile object (not a raw Buffer)
+        this.rpcUrl,        // Arg 2: The blockchain RPC URL string
+        this.signer,        // Arg 3: The ethers Signer
+        { tags: uploadTags } // Arg 4: Options object containing tags
+      );
 
       console.log('✅ [uploadToStorage] Data uploaded successfully. Receipt:', receipt);
+
       // Return key details based on the expected Indexer SDK response structure
-       return {
-           txHash: receipt.transactionHash, // Assuming transactionHash is returned
-           contentHash: receipt.messageKey,   // Assuming messageKey maps to content hash/identifier
-           storageId: receipt.messageKey,    // Using messageKey as a unique ID, adjust if needed
-           timestamp: receipt.timestamp || Date.now()
-       };
+      return {
+          txHash: receipt.transactionHash, // Assuming transactionHash is returned
+          contentHash: receipt.messageKey,   // Assuming messageKey maps to content hash/identifier
+          storageId: receipt.messageKey,    // Using messageKey as a unique ID, adjust if needed
+          timestamp: receipt.timestamp || Date.now()
+      };
+
     } catch (error) {
       console.error('❌ [uploadToStorage] Storage upload error:', error);
       throw new Error(`0G Storage upload failed: ${error.message}`);

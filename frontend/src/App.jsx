@@ -3,7 +3,7 @@ import { useZeroGCompute } from './hooks/useZeroGCompute';
 import { DocuSenseToolbar } from './components/DocuSenseToolbar';
 import ChangeHistory from './components/ChangeHistory';
 import KnowledgeGraphPanel from './components/KnowledgeGraphPanel';
-import { Shield, Cpu, Database, Wallet, AlertCircle } from 'lucide-react';
+import { Shield, Cpu, Database, Wallet, AlertCircle, Share2 } from 'lucide-react';
 import './index.css';
 import './App.css';
 
@@ -29,6 +29,8 @@ function App() {
 
   const [selectedText, setSelectedText] = useState('');
   const [documentContent, setDocumentContent] = useState('');
+  const [isGraphLoading, setIsGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState(null);
   const [aiResponses, setAiResponses] = useState([]);
   const [knowledgeGraphData, setKnowledgeGraphData] = useState({ nodes: [], edges: [] });
   const [changes, setChanges] = useState([
