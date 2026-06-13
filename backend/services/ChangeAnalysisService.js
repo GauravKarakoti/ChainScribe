@@ -66,7 +66,6 @@ export class ChangeAnalysisService {
       await this.costManager.trackRequest('change-analysis', analysisPrompt.length);
 
       const aiResponse = await zeroGService.invokeModel({
-        modelId: 'chainscribe-change-analyzer',
         prompt: analysisPrompt,
         maxTokens: 150,
         temperature: 0.2
