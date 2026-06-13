@@ -6,7 +6,6 @@ import axios from 'axios';
 
 dotenv.config();
 
-// Define the amount to add to the ledger (e.g., 1 0G tokens)
 const LEDGER_FUNDING_AMOUNT = process.env.LEDGER_FUNDING_AMOUNT || '1';
 const PROVIDER_TIMEOUT_MS = parseInt(process.env.ZEROG_PROVIDER_TIMEOUT_MS || '120000', 10);
 
@@ -104,11 +103,9 @@ export class ZeroGService {
     }
   }
 
-  // --- NEW: Dynamic Model Discovery ---
   async getAvailableModels() {
     try {
         console.log('[getAvailableModels] Fetching live model catalog from 0G Router...');
-        // No auth required for the models endpoint per documentation
         const response = await axios.get('https://router-api.0g.ai/v1/models', { timeout: 10000 });
         if (response.data && response.data.data) {
             console.log(`✅ Discovered ${response.data.data.length} models on the network.`);
@@ -126,12 +123,10 @@ export class ZeroGService {
     if (!this.compute) throw new Error("0G Compute Broker not initialized.");
     if (!this.ledger) throw new Error("0G Ledger Broker not initialized.");
 
-    // Determine initial model ID based on params or environment variables
     let modelIdToUse = invocationParams.modelId;
 
     let dynamicProviderAddress = null;
 
-    // --- HELPER: Fetch Provider for a specific model ---
     const fetchProviderForModel = async (modelId) => {
         try {
             const res = await axios.get(`https://router-api.0g.ai/v1/providers?model=${modelId}`, {
@@ -139,7 +134,6 @@ export class ZeroGService {
                 timeout: 8000 
             });
 
-            // Defensively handle both { data: [...] } and [...] response formats
             const providerList = res.data.data || res.data; 
             
             if (Array.isArray(providerList) && providerList.length > 0) {
@@ -152,13 +146,11 @@ export class ZeroGService {
         return null;
     };
 
-    // --- 1. TRY THE DEFAULT MODEL FIRST ---
     if (modelIdToUse) {
         console.log(`[invokeModel] Attempting to find provider for preferred model: ${modelIdToUse}...`);
         dynamicProviderAddress = await fetchProviderForModel(modelIdToUse);
     }
 
-    // --- 2. ITERATIVE FALLBACK: TRY ALL ACTIVE MODELS ---
     if (!dynamicProviderAddress) {
         console.log("⚠️ Preferred/Default model unavailable. Discovering alternatives...");
         const availableModels = await this.getAvailableModels();
@@ -166,14 +158,25 @@ export class ZeroGService {
         
         for (const model of activeModels) {
             console.log(`[invokeModel] Checking alternative model: ${model.id}...`);
-            dynamicProviderAddress = await fetchProviderForModel(model.id);
+            const potentialProviderAddress = await fetchProviderForModel(model.id);
             
-            if (dynamicProviderAddress) {
-                modelIdToUse = model.id; // Update our target model to the one that worked
-                console.log(`✅ Successfully pivoted to model: ${modelIdToUse}`);
-                break; // Exit the loop as soon as we find a working provider!
+            if (potentialProviderAddress) {
+                try {
+                    await this.compute.getServiceMetadata(potentialProviderAddress);
+                    
+                    dynamicProviderAddress = potentialProviderAddress;
+                    modelIdToUse = model.id; 
+                    console.log(`✅ Successfully pivoted to model: ${modelIdToUse} with valid provider`);
+                    break; 
+                } catch (metaError) {
+                    console.warn(`⚠️ Provider ${potentialProviderAddress} for model ${model.id} is not registered on this contract network. Skipping.`);
+                }
             }
         }
+    }
+
+    if (!dynamicProviderAddress) {
+        throw new Error("❌ No valid providers found on the current network. The Router API is returning Mainnet providers, but you are connected to Testnet.");
     }
 
     console.log(`✅ Final Route -> Provider: ${dynamicProviderAddress} | Model: ${modelIdToUse}`);
@@ -182,7 +185,6 @@ export class ZeroGService {
       console.log(`[invokeModel] Getting service metadata for provider...`);
       let endpoint, providerModelMapping;
       
-      // --- 3. GET DIRECT ENDPOINT & METADATA ---
       try {
            const metadata = await this.compute.getServiceMetadata(dynamicProviderAddress);
            endpoint = metadata.endpoint;
@@ -192,7 +194,6 @@ export class ZeroGService {
            throw new Error(`Could not retrieve metadata for ${dynamicProviderAddress}: ${metaError.message}`);
       }
 
-      // --- 4. ON-CHAIN VERIFICATION PREP ---
       try {
         await this.compute.acknowledgeProviderSigner(dynamicProviderAddress);
       } catch (ackError) {
@@ -211,11 +212,10 @@ export class ZeroGService {
         stream: false,
       };
 
-      // --- 5. DIRECT INFERENCE (Bypassing Router for the actual request) ---
       console.log(`[invokeModel] Sending DIRECT request to AI provider endpoint...`);
       const axiosResponse = await axios.post(`${endpoint}/chat/completions`, requestPayload, {
         headers: {
-          ...headers, // Inject the cryptographic billing headers!
+          ...headers,
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
@@ -234,7 +234,6 @@ export class ZeroGService {
 
       if (!responseContent) throw new Error('Received empty or unparseable response.');
 
-      // --- 6. LEDGER PROOF VERIFICATION ---
       let isValid = null;
       try {
            if (chatId) {
@@ -265,7 +264,6 @@ export class ZeroGService {
     }
   }
 
-  // --- Storage & Graph Data Methods Remain Unchanged Below ---
   async uploadToStorage(data, tags = {}) {
     await this.initialize();
     if (!this.storage) throw new Error('0G Storage is not configured.');
