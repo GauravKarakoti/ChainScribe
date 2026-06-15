@@ -54,7 +54,7 @@ export class ZeroGService {
       if (!inferenceContractAddress || !ledgerContractAddress) {
         throw new Error('Missing required contract addresses in environment variables.');
       }
-      
+
       console.log("   Creating Ledger Broker...");
       this.ledger = await createLedgerBroker(
         this.signer,
@@ -68,7 +68,7 @@ export class ZeroGService {
           try {
             const accountBefore = await this.ledger.getLedger();
             const balanceBefore = parseFloat(ethers.formatEther(accountBefore.totalBalance));
-            
+
             if (balanceBefore < 0.1) {
                 console.log(`   Balance low. Attempting to add ${LEDGER_FUNDING_AMOUNT} 0G...`);
                 const amountToAddWei = parseEther(LEDGER_FUNDING_AMOUNT);
@@ -103,97 +103,41 @@ export class ZeroGService {
     }
   }
 
-  async getAvailableModels() {
-    try {
-        console.log('[getAvailableModels] Fetching live model catalog from 0G Router...');
-        const response = await axios.get('https://router-api.0g.ai/v1/models', { timeout: 10000 });
-        if (response.data && response.data.data) {
-            console.log(`✅ Discovered ${response.data.data.length} models on the network.`);
-            return response.data.data;
-        }
-        return [];
-    } catch (error) {
-        console.error(`❌ Failed to fetch available models: ${error.message}`);
-        return [];
-    }
-  }
-
   async invokeModel(invocationParams) {
     await this.initialize();
-    if (!this.compute) throw new Error("0G Compute Broker not initialized.");
-    if (!this.ledger) throw new Error("0G Ledger Broker not initialized.");
 
-    let modelIdToUse = invocationParams.modelId;
+    let dynamicProviderAddress;
+    let endpoint;
+    let providerModelMapping;
+    let modelIdToUse;
 
-    let dynamicProviderAddress = null;
+    console.log('[invokeModel] Discovering providers registered on this contract via listService()...');
+    const services = await this.compute.listService();
+    console.log(`✅ Found ${services.length} on-chain registered service(s).`);
 
-    const fetchProviderForModel = async (modelId) => {
-        try {
-            const res = await axios.get(`https://router-api.0g.ai/v1/providers?model=${modelId}`, {
-                headers: { 'Authorization': `Bearer ${process.env.ROUTER_API_KEY}` },
-                timeout: 8000 
-            });
-
-            const providerList = res.data.data || res.data; 
-            
-            if (Array.isArray(providerList) && providerList.length > 0) {
-                const topProvider = providerList[0];
-                return topProvider.address || topProvider.id || topProvider.provider || topProvider;
-            }
-        } catch (error) {
-            console.warn(`⚠️ Router discovery failed for ${modelId}: ${error.message}`);
-        }
-        return null;
-    };
-
-    if (modelIdToUse) {
-        console.log(`[invokeModel] Attempting to find provider for preferred model: ${modelIdToUse}...`);
-        dynamicProviderAddress = await fetchProviderForModel(modelIdToUse);
+    for (const service of services) {
+      const candidateProvider = service.provider;
+      const candidateModel = service.model;
+      console.log(`[invokeModel] Checking on-chain service: model=${candidateModel} provider=${candidateProvider}...`);
+      try {
+        const metadata = await this.compute.getServiceMetadata(candidateProvider);
+        dynamicProviderAddress = candidateProvider;
+        endpoint = metadata.endpoint;
+        providerModelMapping = metadata.model;
+        modelIdToUse = invocationParams.modelId || candidateModel;
+        console.log(`✅ Selected provider ${dynamicProviderAddress} (model ${providerModelMapping}) @ ${endpoint}`);
+        break;
+      } catch (metaError) {
+        console.warn(`⚠️ Provider ${candidateProvider} for model ${candidateModel} could not be resolved. Skipping. (${metaError.message})`);
+        continue;
+      }
     }
 
-    if (!dynamicProviderAddress) {
-        console.log("⚠️ Preferred/Default model unavailable. Discovering alternatives...");
-        const availableModels = await this.getAvailableModels();
-        const activeModels = availableModels.filter(m => m.provider_count && m.provider_count > 0);
-        
-        for (const model of activeModels) {
-            console.log(`[invokeModel] Checking alternative model: ${model.id}...`);
-            const potentialProviderAddress = await fetchProviderForModel(model.id);
-            
-            if (potentialProviderAddress) {
-                try {
-                    await this.compute.getServiceMetadata(potentialProviderAddress);
-                    
-                    dynamicProviderAddress = potentialProviderAddress;
-                    modelIdToUse = model.id; 
-                    console.log(`✅ Successfully pivoted to model: ${modelIdToUse} with valid provider`);
-                    break; 
-                } catch (metaError) {
-                    console.warn(`⚠️ Provider ${potentialProviderAddress} for model ${model.id} is not registered on this contract network. Skipping.`);
-                }
-            }
-        }
+    if (!dynamicProviderAddress || !endpoint) {
+      throw new Error('No usable provider found on this contract network via listService().');
     }
-
-    if (!dynamicProviderAddress) {
-        throw new Error("❌ No valid providers found on the current network. The Router API is returning Mainnet providers, but you are connected to Testnet.");
-    }
-
-    console.log(`✅ Final Route -> Provider: ${dynamicProviderAddress} | Model: ${modelIdToUse}`);
 
     try {
-      console.log(`[invokeModel] Getting service metadata for provider...`);
-      let endpoint, providerModelMapping;
-      
-      try {
-           const metadata = await this.compute.getServiceMetadata(dynamicProviderAddress);
-           endpoint = metadata.endpoint;
-           providerModelMapping = invocationParams.useFineTunedModel ? modelIdToUse : (metadata.model || modelIdToUse);
-           console.log(`[invokeModel] Retrieved metadata. Endpoint: ${endpoint}, Map: ${providerModelMapping}`);
-      } catch (metaError) {
-           throw new Error(`Could not retrieve metadata for ${dynamicProviderAddress}: ${metaError.message}`);
-      }
-
       try {
         await this.compute.acknowledgeProviderSigner(dynamicProviderAddress);
       } catch (ackError) {
@@ -225,7 +169,7 @@ export class ZeroGService {
       console.log('[invokeModel] Received response from AI provider.');
 
       let responseContent = '';
-      let chatId = axiosResponse.headers['x-trace-id'] || axiosResponse.headers['trace_id'] || axiosResponse.headers['x-request-id'] || axiosResponse.data?.id || null;
+      let chatId = axiosResponse.headers['zg-res-key'] || axiosResponse.data?.id || null;
 
       if (axiosResponse.data && axiosResponse.data.choices && axiosResponse.data.choices.length > 0) {
         const choice = axiosResponse.data.choices[0];
@@ -237,7 +181,8 @@ export class ZeroGService {
       let isValid = null;
       try {
            if (chatId) {
-               isValid = await this.compute.processResponse(dynamicProviderAddress, responseContent, chatId);
+               const usageContent = JSON.stringify(axiosResponse.data?.usage || {});
+               isValid = await this.compute.processResponse(dynamicProviderAddress, chatId, usageContent);
            }
       } catch (processError) {
           console.error(`❌ Verification error: ${processError.message}`);
@@ -270,9 +215,9 @@ export class ZeroGService {
     const dataString = typeof data === 'string' ? data : JSON.stringify(data);
     const contentType = typeof data === 'string' ? 'text/plain' : 'application/json';
     const dataToUpload = Buffer.from(dataString, 'utf-8');
-    const fileToUpload = new AbstractFile([dataToUpload], '', { type: contentType }); 
+    const fileToUpload = new AbstractFile([dataToUpload], '', { type: contentType });
     const uploadTags = { ...tags, uploadedAt: new Date().toISOString(), contentType: contentType };
-    
+
     const receipt = await this.storage.upload(fileToUpload, this.rpcUrl, this.signer, { tags: uploadTags });
     return {
         txHash: receipt.transactionHash,
@@ -300,6 +245,6 @@ export class ZeroGService {
   async downloadGraphData(contentHash) {
       return this.downloadFromStorage(contentHash);
   }
-} 
+}
 
 export const zeroGService = new ZeroGService();
