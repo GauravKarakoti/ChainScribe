@@ -127,107 +127,109 @@ export class ZeroGService {
   async invokeModel(invocationParams) {
     await this.initialize();
 
-    let dynamicProviderAddress;
-    let endpoint;
-    let providerModelMapping;
-    let modelIdToUse;
-
     console.log('[invokeModel] Discovering providers registered on this contract via listService()...');
     const services = await this.compute.listService();
     console.log(`✅ Found ${services.length} on-chain registered service(s).`);
 
+    let responseContent = '';
+    let chatId = null;
+    let isValid = null;
+    let successfulModelId = null;
+    let successfulProviderModel = null;
+    let finalError = null;
+
+    // Loop through all providers and try them until one succeeds
     for (const service of services) {
       const candidateProvider = service.provider;
       const candidateModel = service.model;
-      console.log(`[invokeModel] Checking on-chain service: model=${candidateModel} provider=${candidateProvider}...`);
+      
+      console.log(`[invokeModel] Trying provider: ${candidateProvider} for model: ${candidateModel}...`);
+      
       try {
         const metadata = await this.compute.getServiceMetadata(candidateProvider);
-        dynamicProviderAddress = candidateProvider;
-        endpoint = metadata.endpoint;
-        providerModelMapping = metadata.model;
-        modelIdToUse = invocationParams.modelId || candidateModel;
-        console.log(`✅ Selected provider ${dynamicProviderAddress} (model ${providerModelMapping}) @ ${endpoint}`);
+        const endpoint = metadata.endpoint;
+        const providerModelMapping = metadata.model;
+        const modelIdToUse = invocationParams.modelId || candidateModel;
+
+        console.log(`✅ Metadata retrieved. Endpoint: ${endpoint}`);
+
+        // Try acknowledging the signer
+        try {
+          await this.compute.acknowledgeProviderSigner(candidateProvider);
+        } catch (ackError) {
+          console.warn(`⚠️ Could not acknowledge provider signer: ${ackError.message}`);
+        }
+
+        const billingContent = invocationParams.prompt;
+        const headers = await this.compute.getRequestHeaders(candidateProvider, billingContent);
+
+        const requestPayload = {
+          model: providerModelMapping,
+          messages: [{ role: "user", content: invocationParams.prompt }],
+          ...(invocationParams.maxTokens && { max_tokens: invocationParams.maxTokens }),
+          ...(invocationParams.temperature && { temperature: invocationParams.temperature }),
+          stream: false,
+        };
+
+        console.log(`[invokeModel] Sending request to ${endpoint}...`);
+        
+        // Import 'https' at the top of your file to use this agent
+        const httpsAgent = new (await import('https')).Agent({ rejectUnauthorized: false });
+
+        const axiosResponse = await axios.post(`${endpoint}/chat/completions`, requestPayload, {
+          headers: {
+            ...headers,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          timeout: PROVIDER_TIMEOUT_MS,
+          httpsAgent // Bypass strict SSL for testnet proxy endpoints
+        });
+
+        chatId = axiosResponse.headers['zg-res-key'] || axiosResponse.data?.id || null;
+
+        if (axiosResponse.data && axiosResponse.data.choices && axiosResponse.data.choices.length > 0) {
+          const choice = axiosResponse.data.choices[0];
+          responseContent = choice.message?.content?.trim() || choice.text?.trim();
+        }
+
+        if (!responseContent) throw new Error('Received empty or unparseable response.');
+
+        // Verify response
+        if (chatId) {
+            const usageContent = JSON.stringify(axiosResponse.data?.usage || {});
+            isValid = await this.compute.processResponse(candidateProvider, chatId, usageContent);
+        }
+
+        console.log(`✅ [invokeModel] Successfully retrieved response from ${candidateProvider}`);
+        
+        // Save success state and break out of the loop
+        successfulModelId = modelIdToUse;
+        successfulProviderModel = providerModelMapping;
         break;
-      } catch (metaError) {
-        console.warn(`⚠️ Provider ${candidateProvider} for model ${candidateModel} could not be resolved. Skipping. (${metaError.message})`);
+
+      } catch (error) {
+        // If this provider fails (network error, timeout, bad SSL), log it and move to the next iteration
+        console.warn(`⚠️ Provider ${candidateProvider} failed: ${error.message}. Trying next provider...`);
+        finalError = error;
         continue;
       }
     }
 
-    if (!dynamicProviderAddress || !endpoint) {
-      throw new Error('No usable provider found on this contract network via listService().');
+    // If we looped through all providers and still have no response
+    if (!responseContent) {
+        console.error('❌ [invokeModel] All providers failed.');
+        throw new Error(`All available AI providers failed. Last error: ${finalError?.message}`);
     }
 
-    try {
-      try {
-        await this.compute.acknowledgeProviderSigner(dynamicProviderAddress);
-      } catch (ackError) {
-        console.warn(`⚠️ Could not acknowledge provider signer: ${ackError.message}`);
-      }
-
-      const billingContent = invocationParams.prompt;
-      console.log(`[invokeModel] Preparing billing signatures for Ledger...`);
-      const headers = await this.compute.getRequestHeaders(dynamicProviderAddress, billingContent);
-
-      const requestPayload = {
-        model: providerModelMapping,
-        messages: [{ role: "user", content: invocationParams.prompt }],
-        ...(invocationParams.maxTokens && { max_tokens: invocationParams.maxTokens }),
-        ...(invocationParams.temperature && { temperature: invocationParams.temperature }),
-        stream: false,
-      };
-
-      console.log(`[invokeModel] Sending DIRECT request to AI provider endpoint...`);
-      const axiosResponse = await axios.post(`${endpoint}/chat/completions`, requestPayload, {
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        timeout: PROVIDER_TIMEOUT_MS,
-      });
-
-      console.log('[invokeModel] Received response from AI provider.');
-
-      let responseContent = '';
-      let chatId = axiosResponse.headers['zg-res-key'] || axiosResponse.data?.id || null;
-
-      if (axiosResponse.data && axiosResponse.data.choices && axiosResponse.data.choices.length > 0) {
-        const choice = axiosResponse.data.choices[0];
-        responseContent = choice.message?.content?.trim() || choice.text?.trim();
-      }
-
-      if (!responseContent) throw new Error('Received empty or unparseable response.');
-
-      let isValid = null;
-      try {
-           if (chatId) {
-               const usageContent = JSON.stringify(axiosResponse.data?.usage || {});
-               isValid = await this.compute.processResponse(dynamicProviderAddress, chatId, usageContent);
-           }
-      } catch (processError) {
-          console.error(`❌ Verification error: ${processError.message}`);
-      }
-
-      if (isValid === true) console.log(`✅ [invokeModel] Response verified successfully on Ledger.`);
-      else console.warn(`⚠️ [invokeModel] Response verification state: ${isValid}`);
-
-      return {
-        output: responseContent,
-        modelId: modelIdToUse,
-        providerModelId: providerModelMapping,
-        chatId: chatId,
-        verified: isValid,
-        timestamp: Date.now()
-      };
-
-    } catch (error) {
-      console.error('❌ [invokeModel] Error during direct model invocation:');
-      if (axios.isAxiosError(error)) {
-        throw new Error(`AI provider request failed: ${error.message}`);
-      }
-      throw new Error(`Model invocation failed: ${error.message}`);
-    }
+    return {
+      output: responseContent,
+      modelId: successfulModelId,
+      providerModelId: successfulProviderModel,
+      chatId: chatId,
+      verified: isValid,
+      timestamp: Date.now()
+    };
   }
 
   async uploadToStorage(data, tags = {}) {
