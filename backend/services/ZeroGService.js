@@ -66,17 +66,38 @@ export class ZeroGService {
 
       if (parseFloat(LEDGER_FUNDING_AMOUNT) > 0) {
           try {
-            const accountBefore = await this.ledger.getLedger();
-            const balanceBefore = parseFloat(ethers.formatEther(accountBefore.totalBalance));
+              const amountToAdd = parseFloat(LEDGER_FUNDING_AMOUNT);
+              let needsDeposit = false;
 
-            if (balanceBefore < 0.1) {
-                console.log(`   Balance low. Attempting to add ${LEDGER_FUNDING_AMOUNT} 0G...`);
-                const amountToAddWei = parseEther(LEDGER_FUNDING_AMOUNT);
-                const txResponse = await this.ledger.addLedger(amountToAddWei);
-                if (txResponse && typeof txResponse.wait === 'function') await txResponse.wait(1);
-            }
+              // 1. Check if the account exists
+              try {
+                  const accountBefore = await this.ledger.getLedger();
+                  // If getLedger succeeds, the account exists. Check its balance.
+                  const balanceBefore = parseFloat(ethers.formatEther(accountBefore.totalBalance));
+                  
+                  if (balanceBefore < 0.1) {
+                      needsDeposit = true;
+                  }
+              } catch (err) {
+                  if (err.message.includes('does not exist')) {
+                      console.log(`   Ledger account does not exist. Creating and funding with ${amountToAdd}...`);
+                      // Use addLedger to CREATE the account with an initial balance
+                      await this.ledger.addLedger(amountToAdd);
+                      console.log(`   ✅ Ledger account created.`);
+                  } else {
+                      throw err;
+                  }
+              }
+
+              // 2. If the account already existed but had a low balance, use depositFund
+              if (needsDeposit) {
+                  console.log(`   Balance low. Attempting to deposit ${amountToAdd}...`);
+                  // Use depositFund to ADD to an existing account
+                  await this.ledger.depositFund(amountToAdd);
+                  console.log(`   ✅ Funds deposited.`);
+              }
           } catch (fundingError) {
-            console.error(`❌ Failed to fund Ledger Account: ${fundingError.message}`);
+              console.error(`❌ Failed to fund Ledger Account: ${fundingError.message}`);
           }
       }
 
